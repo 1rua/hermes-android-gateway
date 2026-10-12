@@ -8,6 +8,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import logging
 import os
 import signal
 import sys
@@ -19,7 +20,9 @@ from types import SimpleNamespace
 
 # 先隔离宿主环境，再导入可能读取宿主配置、日志与数据库位置的模块。
 # 默认夹具分支保留原来的环境行为，只有显式 echo 模式强制隔离。
-ECHO_STORAGE_ROOT = Path(mkdtemp(prefix="oai-android-echo-")) if "--echo-agent" in sys.argv else None
+ECHO_STORAGE_ROOT = Path(mkdtemp(prefix="oai-android-echo-")) if any(
+    flag in sys.argv for flag in ("--echo-agent", "--stream-agent")
+) else None
 if ECHO_STORAGE_ROOT is not None:
     echo_home = str(ECHO_STORAGE_ROOT / "hermes-home")
     echo_key = str(ECHO_STORAGE_ROOT / "keys" / "gateway-master-key")
@@ -58,7 +61,7 @@ def contract_root(explicit):
     return resolution.root
 
 
-async def run_echo_agent(core, admin, exposure, port):
+async def run_echo_agent(core, admin, exposure, port, *, stream_agent=False):
     """测试专用确定性 Agent，经生产适配器完成消息回合与 SSE 回复。"""
     from open_android_intelligence_gateway.adapter import BasePlatformAdapter, OpenAndroidPlatformAdapter
     from open_android_intelligence_gateway.platform_identity import GATEWAY_PLATFORM_ID
@@ -80,6 +83,67 @@ async def run_echo_agent(core, admin, exposure, port):
         config = SimpleNamespace(extra={"host": "127.0.0.1", "account_id": "alice"})
     adapter = OpenAndroidPlatformAdapter(config, GatewayServices(core, admin, exposure))
     adapter._port = port
+    step_reader = None
+    step_transport = None
+    if stream_agent:
+        # 测试客户端确认收到当前增量后才继续生成，避免依赖网速或固定等待时间。
+        step_reader = asyncio.StreamReader()
+        step_transport, _ = await asyncio.get_running_loop().connect_read_pipe(
+            lambda: asyncio.StreamReaderProtocol(step_reader), sys.stdin,
+        )
+
+        class StreamChannelEvidence(logging.Handler):
+            def emit(self, record):
+                request_line = getattr(record, "first_request_line", "")
+                status = str(getattr(record, "response_status", ""))
+                if "/events" in request_line and status in {"101", "200"}:
+                    print(json.dumps({
+                        "fixtureEvent": "stream-transport",
+                        "transport": "websocket" if status == "101" else "sse",
+                    }), file=sys.stderr, flush=True)
+
+        access_log = logging.getLogger("aiohttp.access")
+        access_log.handlers = [StreamChannelEvidence()]
+        access_log.setLevel(logging.INFO)
+        access_log.propagate = False
+
+    async def wait_for_observation():
+        if await step_reader.readline() != b"continue\n":
+            raise RuntimeError("流式夹具未收到客户端增量观察确认")
+
+    async def stream_reply(event, reply):
+        if native_host:
+            from gateway.stream_consumer import GatewayStreamConsumer, StreamConsumerConfig
+
+            consumer = GatewayStreamConsumer(
+                adapter=adapter, chat_id=event.source.chat_id,
+                config=StreamConsumerConfig(edit_interval=0.01, buffer_threshold=1, cursor=""),
+            )
+            task = asyncio.create_task(consumer.run())
+            try:
+                for fragment in ("fixture-agent-", "reply:\n", event.text):
+                    consumer.on_delta(fragment)
+                    await wait_for_observation()
+                consumer.finish(reply)
+                await task
+                if not consumer.final_response_sent or consumer.delivered_final_matches(reply) is not True:
+                    raise RuntimeError("原生 Hermes 未确认流式回复的最终投递")
+            finally:
+                if not task.done():
+                    task.cancel()
+                await task
+        else:
+            partial = ""
+            message_id = None
+            for fragment in ("fixture-agent-", "reply:\n", event.text):
+                partial += fragment
+                result = await adapter.send(event.source.chat_id, partial, metadata={"expect_edits": True}) if message_id is None else await adapter.edit_message(event.source.chat_id, message_id, partial)
+                if not result.success:
+                    raise RuntimeError("独立夹具未确认流式编辑")
+                message_id = result.message_id
+                await wait_for_observation()
+            if not (await adapter.edit_message(event.source.chat_id, message_id, reply, finalize=True)).success:
+                raise RuntimeError("独立夹具未确认流式完成")
 
     async def echo(event):
         # 仅记录夹具执行次数与身份，正文由确定性回复返回，不进入诊断日志。
@@ -90,9 +154,12 @@ async def run_echo_agent(core, admin, exposure, port):
         reply = ECHO_REPLY_PREFIX + event.text
         # 经生产发送端口保留原样输入；原生宿主随后负责调用完成 hook。
         # 回答已发布时返回 None，避免宿主再次发送或裁剪尾部空白。
-        result = await adapter.send(event.source.chat_id, reply)
-        if not result.success:
-            raise RuntimeError("隔离 Agent 回复未成功回传")
+        if stream_agent:
+            await stream_reply(event, reply)
+        else:
+            result = await adapter.send(event.source.chat_id, reply)
+            if not result.success:
+                raise RuntimeError("隔离 Agent 回复未成功回传")
         if not native_host:
             await adapter.on_processing_complete(event, "success")
 
@@ -108,11 +175,13 @@ async def run_echo_agent(core, admin, exposure, port):
         actual_port = adapter._site._server.sockets[0].getsockname()[1]
         print(f"http://127.0.0.1:{actual_port}", flush=True)
         print(json.dumps({
-            "fixtureMode": "echo-agent", "host": "native" if native_host else "standalone",
+            "fixtureMode": "stream-agent" if stream_agent else "echo-agent", "host": "native" if native_host else "standalone",
         }), file=sys.stderr, flush=True)
         await stopped.wait()
     finally:
         await adapter.disconnect()
+        if step_transport is not None:
+            step_transport.close()
         if native_host:
             platform_registry.unregister(GATEWAY_PLATFORM_ID)
 
@@ -128,12 +197,17 @@ def main():
         "--echo-agent", action="store_true",
         help="使用真实平台 HTTP/SSE 入口和确定性测试 Agent 回传回复。",
     )
+    parser.add_argument(
+        "--stream-agent", action="store_true",
+        help="逐段回传测试回复，标准输入每行 continue 确认一次增量观察。",
+    )
     args = parser.parse_args()
-    storage = ECHO_STORAGE_ROOT / "gateway" if args.echo_agent else Path(mkdtemp(prefix="oai-android-interop-"))
+    echo_mode = args.echo_agent or args.stream_agent
+    storage = ECHO_STORAGE_ROOT / "gateway" if echo_mode else Path(mkdtemp(prefix="oai-android-interop-"))
     # Exercise the deployed key source when the operator configures one; the
     # in-process test double stays for the plain unit runs.
     key_file = os.environ.get("OAI_GATEWAY_MASTER_KEY_FILE")
-    if args.echo_agent:
+    if echo_mode:
         create_master_key_file(key_file)
     secret_store = LocalMasterKeyStore(key_file) if key_file else make_secret_store()
     core = create_gateway_core(storage, secret_store=secret_store, contract_root=contract_root(args.contract_root))
@@ -148,8 +222,8 @@ def main():
     exposure = create_gateway_exposure("host-route", core=core, host_version="1.0.0", host_api=compatibility,
                                        verify_request=create_gateway_request_verifier(core))
 
-    if args.echo_agent:
-        asyncio.run(run_echo_agent(core, admin, exposure, args.port))
+    if echo_mode:
+        asyncio.run(run_echo_agent(core, admin, exposure, args.port, stream_agent=args.stream_agent))
         return
 
     class Handler(BaseHTTPRequestHandler):

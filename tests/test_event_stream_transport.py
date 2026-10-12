@@ -197,14 +197,16 @@ def test_adapter_streaming_edits_progressive_delivery(tmp_path):
 
                     # 2. edit_message intermediate -> stream_delta
                     ok_edit = await adapter.edit_message("conv_stream", msg_id, "Hello world", finalize=False)
-                    assert ok_edit is True
+                    assert ok_edit.success is True
+                    assert ok_edit.message_id == msg_id
                     frame2 = await _read_event_frame(response)
                     assert "event: conversation.message.delta" in frame2
                     assert _data_of(frame2)["payload"]["text"] == "Hello world"
 
                     # 3. edit_message finalize -> complete_message
                     ok_final = await adapter.edit_message("conv_stream", msg_id, "Hello world!", finalize=True)
-                    assert ok_final is True
+                    assert ok_final.success is True
+                    assert ok_final.message_id == msg_id
                     frame3 = await _read_event_frame(response)
                     assert "event: conversation.message.completed" in frame3
                     assert _data_of(frame3)["payload"]["text"] == "Hello world!"

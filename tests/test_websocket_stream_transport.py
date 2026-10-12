@@ -250,14 +250,16 @@ def test_ws_stream_progressive_delivery(tmp_path):
 
                     # 2. edit_message intermediate -> stream_delta
                     ok_edit = await adapter.edit_message("conv_ws", msg_id, "Hello world", finalize=False)
-                    assert ok_edit is True
+                    assert ok_edit.success is True
+                    assert ok_edit.message_id == msg_id
                     frame2 = await _read_json_event(ws)
                     assert frame2["event"] == "conversation.message.delta"
                     assert json.loads(frame2["data"])["payload"]["text"] == "Hello world"
 
                     # 3. edit_message finalize -> complete_message
                     ok_final = await adapter.edit_message("conv_ws", msg_id, "Hello world!", finalize=True)
-                    assert ok_final is True
+                    assert ok_final.success is True
+                    assert ok_final.message_id == msg_id
                     frame3 = await _read_json_event(ws)
                     assert frame3["event"] == "conversation.message.completed"
                     assert json.loads(frame3["data"])["payload"]["text"] == "Hello world!"

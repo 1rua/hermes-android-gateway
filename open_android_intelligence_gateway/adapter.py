@@ -1092,11 +1092,8 @@ class OpenAndroidPlatformAdapter(BasePlatformAdapter):
         *,
         finalize: bool = False,
         **kwargs: Any,
-    ) -> bool:
-        """Progressive edit support for streaming consumers.
-
-        Streams intermediate deltas via [stream_delta] and final message via [complete_message].
-        """
+    ) -> SendResult:
+        """按宿主 SendResult 契约确认增量更新与最终完成。"""
         target_account = (
             kwargs.get("account_id")
             or self._conv_to_account.get(chat_id)
@@ -1104,14 +1101,14 @@ class OpenAndroidPlatformAdapter(BasePlatformAdapter):
         )
         if not target_account:
             logger.warning("[open_android] No account configured; cannot edit message %s", message_id)
-            return False
+            return SendResult(success=False, error="ACCOUNT_NOT_CONFIGURED", retryable=False)
         now_iso = iso_millis()
         if finalize:
             message_id = self._published_reply_id(chat_id, content, message_id)
             await self.complete_message(chat_id, message_id, content, occurred_at=now_iso, account_id=target_account)
         else:
             await self.stream_delta(chat_id, message_id, content, occurred_at=now_iso, account_id=target_account)
-        return True
+        return SendResult(success=True, message_id=message_id)
 
     async def stream_delta(
         self,

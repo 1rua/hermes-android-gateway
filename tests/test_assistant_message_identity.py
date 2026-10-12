@@ -114,7 +114,9 @@ def test_a_finalize_then_a_send_of_the_same_reply_lands_under_one_id(tmp_path):
         conversation = _seed_conversation(core, "cconv_mixed")
         adapter = _adapter(core)
 
-        assert await adapter.edit_message(conversation, "msg_streamed", REPLY, finalize=True) is True
+        edited = await adapter.edit_message(conversation, "msg_streamed", REPLY, finalize=True)
+        assert edited.success is True
+        assert edited.message_id == "msg_streamed"
         await adapter.send(conversation, REPLY)
 
         assert [row["messageId"] for row in _rows(core, conversation)] == ["msg_streamed"]

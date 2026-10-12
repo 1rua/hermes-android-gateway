@@ -1,0 +1,129 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+__ test_native_consumer_delivers_three_progressive_updates_before_completion ___
+
+tmp_path = PosixPath('/tmp/pytest-of-djbd/pytest-1/test_native_consumer_delivers_0')
+
+    @pytest.mark.skipif(not NATIVE_HOST, reason="本回归需加载原生 Hermes GatewayStreamConsumer")
+    def test_native_consumer_delivers_three_progressive_updates_before_completion(tmp_path):
+        from gateway.stream_consumer import GatewayStreamConsumer, StreamConsumerConfig
+
+        async def scenario():
+            key = Ed25519PrivateKey.generate()
+            core, bundle, conversation_id, exposure = _gateway(tmp_path, key)
+            adapter = _adapter(core, exposure)
+            assert await adapter.connect()
+            base_url = f"http://127.0.0.1:{adapter._site._server.sockets[0].getsockname()[1]}"
+            consumer = GatewayStreamConsumer(
+                adapter=adapter,
+                chat_id=conversation_id,
+                config=StreamConsumerConfig(edit_interval=0.01, buffer_threshold=1, cursor=""),
+                metadata={"account_id": ACCOUNT_ID},
+            )
+            task = None
+            try:
+                async with ClientSession() as client:
+                    _, headers = _signed_request(bundle, key, "GET", f"{PREFIX}/events", request_id="req_native_stream")
+                    headers["Accept"] = "text/event-stream"
+                    async with client.get(base_url + f"{PREFIX}/events", headers=headers) as stream:
+                        assert stream.status == 200
+                        task = asyncio.create_task(consumer.run())
+                        events = []
+                        for fragment, expected_text in (
+                            ("第一段", "第一段"),
+                            ("，第二段", "第一段，第二段"),
+                            ("，第三段", "第一段，第二段，第三段"),
+                        ):
+                            consumer.on_delta(fragment)
+                            event = await _next_reply_event(stream)
+                            assert event["event"] == "conversation.message.delta"
+                            assert event["payload"]["text"] == expected_text
+                            assert event["payload"]["conversationId"] == conversation_id
+                            events.append(event)
+                        consumer.finish("第一段，第二段，第三段。")
+                        completed = await _next_reply_event(stream)
+                        assert completed["event"] == "conversation.message.completed"
+                        assert completed["payload"]["text"] == "第一段，第二段，第三段。"
+                        assert {event["payload"]["messageId"] for event in [*events, completed]} == {
+                            events[0]["payload"]["messageId"],
+                        }
+                        await asyncio.wait_for(task, 2)
+                        assert consumer.final_response_sent, "流式完成必须向原生宿主确认，避免再次发送最终回答"
+                        assert consumer.delivered_final_matches("第一段，第二段，第三段。") is True
+            finally:
+                consumer.finish()
+                if task is not None:
+                    await asyncio.wait_for(task, 2)
+                await adapter.disconnect()
+                from gateway.platform_registry import platform_registry
+                platform_registry.unregister(adapter.platform.value)
+
+>       asyncio.run(scenario())
+
+tests/test_native_streaming_delivery.py:82:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+/home/djbd/.local/share/uv/python/cpython-3.11.15-linux-x86_64-gnu/lib/python3.11/asyncio/runners.py:190: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/home/djbd/.local/share/uv/python/cpython-3.11.15-linux-x86_64-gnu/lib/python3.11/asyncio/runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/home/djbd/.local/share/uv/python/cpython-3.11.15-linux-x86_64-gnu/lib/python3.11/asyncio/base_events.py:654: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+    async def scenario():
+        key = Ed25519PrivateKey.generate()
+        core, bundle, conversation_id, exposure = _gateway(tmp_path, key)
+        adapter = _adapter(core, exposure)
+        assert await adapter.connect()
+        base_url = f"http://127.0.0.1:{adapter._site._server.sockets[0].getsockname()[1]}"
+        consumer = GatewayStreamConsumer(
+            adapter=adapter,
+            chat_id=conversation_id,
+            config=StreamConsumerConfig(edit_interval=0.01, buffer_threshold=1, cursor=""),
+            metadata={"account_id": ACCOUNT_ID},
+        )
+        task = None
+        try:
+            async with ClientSession() as client:
+                _, headers = _signed_request(bundle, key, "GET", f"{PREFIX}/events", request_id="req_native_stream")
+                headers["Accept"] = "text/event-stream"
+                async with client.get(base_url + f"{PREFIX}/events", headers=headers) as stream:
+                    assert stream.status == 200
+                    task = asyncio.create_task(consumer.run())
+                    events = []
+                    for fragment, expected_text in (
+                        ("第一段", "第一段"),
+                        ("，第二段", "第一段，第二段"),
+                        ("，第三段", "第一段，第二段，第三段"),
+                    ):
+                        consumer.on_delta(fragment)
+                        event = await _next_reply_event(stream)
+                        assert event["event"] == "conversation.message.delta"
+                        assert event["payload"]["text"] == expected_text
+                        assert event["payload"]["conversationId"] == conversation_id
+                        events.append(event)
+                    consumer.finish("第一段，第二段，第三段。")
+                    completed = await _next_reply_event(stream)
+                    assert completed["event"] == "conversation.message.completed"
+                    assert completed["payload"]["text"] == "第一段，第二段，第三段。"
+                    assert {event["payload"]["messageId"] for event in [*events, completed]} == {
+                        events[0]["payload"]["messageId"],
+                    }
+                    await asyncio.wait_for(task, 2)
+>                   assert consumer.final_response_sent, "流式完成必须向原生宿主确认，避免再次发送最终回答"
+E                   AssertionError: 流式完成必须向原生宿主确认，避免再次发送最终回答
+E                   assert False
+E                    +  where False = <gateway.stream_consumer.GatewayStreamConsumer object at 0x7fa31ff3cb10>.final_response_sent
+
+tests/test_native_streaming_delivery.py:72: AssertionError
+------------------------------ Captured log call -------------------------------
+ERROR    gateway.stream_consumer:stream_consumer_transport.py:357 Stream send/edit error: 'bool' object has no attribute 'success'
+ERROR    gateway.stream_consumer:stream_consumer_transport.py:357 Stream send/edit error: 'bool' object has no attribute 'success'
+ERROR    gateway.stream_consumer:stream_consumer_transport.py:357 Stream send/edit error: 'bool' object has no attribute 'success'
+ERROR    gateway.stream_consumer:stream_consumer_transport.py:357 Stream send/edit error: 'bool' object has no attribute 'success'
+=========================== short test summary info ============================
+FAILED tests/test_native_streaming_delivery.py::test_native_consumer_delivers_three_progressive_updates_before_completion
+1 failed in 1.50s

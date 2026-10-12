@@ -19,7 +19,7 @@ from test_support import contract_root, core_schema_hash
 
 
 @contextmanager
-def _fixture_process(tmp_path, echo_agent):
+def _fixture_process(tmp_path, echo_agent, *, stream_agent=False):
     log_path = tmp_path / "fixture-stderr.txt"
     env = dict(os.environ)
     env.pop("OAI_GATEWAY_MASTER_KEY_FILE", None)
@@ -36,14 +36,18 @@ def _fixture_process(tmp_path, echo_agent):
         env["OPEN_ANDROID_GATEWAY_PORT"] = "11451"
         env["OPEN_ANDROID_GATEWAY_HOST"] = "203.0.113.10"
         env["OPEN_ANDROID_ACCOUNT_ID"] = "inherited-account"
+    if stream_agent:
+        command.append("--stream-agent")
     with log_path.open("w") as stderr:
-        process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=stderr, text=True, env=env)
+        process = subprocess.Popen(command, stdin=subprocess.PIPE if stream_agent else None, stdout=subprocess.PIPE, stderr=stderr, text=True, env=env)
         try:
             yield process, log_path
         finally:
             process.terminate()
             process.wait(timeout=10)
             process.stdout.close()
+            if process.stdin is not None:
+                process.stdin.close()
 
 
 async def _fixture_url(process, log_path):
@@ -97,6 +101,62 @@ async def _login(client, base_url, key):
         assert response.status == 200
         assert result["data"]["accountId"] == "alice"
         return result["data"]
+
+
+@pytest.mark.parametrize("channel", ["sse", "websocket"])
+def test_stream_fixture_requires_each_live_delta_to_be_observed_before_completion(tmp_path, channel):
+    async def scenario():
+        with _fixture_process(tmp_path, True, stream_agent=True) as (process, log_path):
+            base_url = await _fixture_url(process, log_path)
+            key = Ed25519PrivateKey.generate()
+            async with ClientSession() as client:
+                bundle = await _login(client, base_url, key)
+                created = await _request(client, base_url, bundle, key, "POST", PREFIX + "/conversations", {"clientConversationId": "cc_fixture_stream"}, "req_stream_create")
+                conversation_id = created["data"]["conversation"]["conversationId"]
+                _, headers = _signed_request(bundle, key, "GET", PREFIX + "/events", request_id="req_fixture_stream")
+                headers["Accept"] = "text/event-stream"
+                connection = await client.ws_connect(base_url + PREFIX + "/events", headers=headers) if channel == "websocket" else await client.get(base_url + PREFIX + "/events", headers=headers)
+
+                async def next_event():
+                    if channel == "sse":
+                        return await _next_event(connection)
+                    async with asyncio.timeout(5):
+                        frame = await connection.receive_json()
+                        return {**json.loads(frame["data"]), "event": frame["event"]}
+
+                try:
+                    await _request(client, base_url, bundle, key, "POST", f"{PREFIX}/conversations/{conversation_id}/messages", {"clientMessageId": "cm_fixture_stream", "text": "流式测试", "attachments": []}, "req_stream_message")
+                    events = []
+                    for expected in ("fixture-agent-", "fixture-agent-reply:\n", "fixture-agent-reply:\n流式测试"):
+                        event = await next_event()
+                        while event["event"] != "conversation.message.delta":
+                            event = await next_event()
+                        assert event["payload"]["text"] == expected
+                        events.append(event)
+                        # 未确认之前不允许模型完成，确保三个观察来自真实的逐步投递。
+                        process.stdin.write("continue\n")
+                        process.stdin.flush()
+                    event = await next_event()
+                    while event["event"] != "conversation.message.completed":
+                        event = await next_event()
+                    assert event["payload"]["text"] == "fixture-agent-reply:\n流式测试"
+                    assert {entry["payload"]["messageId"] for entry in [*events, event]} == {events[0]["payload"]["messageId"]}
+                    status = await next_event()
+                    while status["event"] != "conversation.message.status" or status["payload"]["status"] not in {"completed", "failed"}:
+                        status = await next_event()
+                    assert status["payload"]["status"] == "completed", log_path.read_text()
+                finally:
+                    if channel == "websocket":
+                        await connection.close()
+                    else:
+                        connection.close()
+            async with asyncio.timeout(5):
+                while not any(json.loads(line).get("fixtureEvent") == "stream-transport" for line in log_path.read_text().splitlines() if line.startswith("{")):
+                    await asyncio.sleep(0.01)
+            transports = [json.loads(line)["transport"] for line in log_path.read_text().splitlines() if line.startswith("{") and json.loads(line).get("fixtureEvent") == "stream-transport"]
+            assert transports == [channel]
+
+    asyncio.run(scenario())
 
 
 @pytest.mark.parametrize("echo_agent", [False, True])
