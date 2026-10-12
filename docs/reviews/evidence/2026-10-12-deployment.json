@@ -1,0 +1,31 @@
+{
+  "verification.json": {
+    "appRevision": "f82fc3390911b6aec4c1ed8b967225b1d755916b",
+    "pluginRevision": "d7ec5fbfae81cf9228fdd9d53c86e4c99d682b80",
+    "apkBytes": 61715709,
+    "apkSha256": "9acae9f8df8c88ed8a2e590a55eba8f603aa3544c9e9f854ba9e913c86e4042b",
+    "artifactRun": 38197739261,
+    "debugCertificateSha256": "37d9445fab11d827b032b84b0739acb2c33aa8ace1f319ed20a4cc612624ce33"
+  },
+  "local-deployment.json": {
+    "deployment": "本机",
+    "pluginRevision": "d7ec5fbfae81cf9228fdd9d53c86e4c99d682b80",
+    "healthStatus": 200,
+    "healthBody": "ok",
+    "port": 11451,
+    "checkedConfigFiles": 3,
+    "configUnchanged": true,
+    "accountDataOperations": "无账号重建、删除、配对或密钥清理操作"
+  },
+  "remote-deployment.json": {
+    "deployment": "47.251.8.196",
+    "pluginRevision": "d7ec5fbfae81cf9228fdd9d53c86e4c99d682b80",
+    "healthStatus": 200,
+    "healthBody": "ok",
+    "port": 8045,
+    "checkedConfigFiles": 3,
+    "configUnchanged": true,
+    "service": "MainPID=1253178\nExecMainStartTimestamp=Mon 2026-10-12 11:05:06 CST\nExecMainStatus=0\nActiveState=active\nSubState=running",
+    "accountDataOperations": "无账号重建、删除、配对或密钥清理操作"
+  }
+}
