@@ -1,0 +1,68 @@
+{
+  "androidRevision": "d5e1838a04e8508845bb4fc6529e8edfcb776330",
+  "androidProgramRevision": "9dc4cc9446ab27b531ac4f2f09f9e3adb2a82139",
+  "pluginRevision": "8a883b907dd46704de2946ff0e4edec26ed92d1f",
+  "hermesHostRevision": "75b083e9399115b12513385252811f09c3503c90",
+  "deployments": [
+    {
+      "gateway": "local",
+      "beforeRevision": "d7ec5fbfae81cf9228fdd9d53c86e4c99d682b80",
+      "pluginRevision": "8a883b907dd46704de2946ff0e4edec26ed92d1f",
+      "pluginWorktreeClean": true,
+      "configFilesChecked": 3,
+      "configurationUnchanged": true,
+      "dependenciesChanged": false,
+      "service": {
+        "ActiveState": "active",
+        "SubState": "running",
+        "MainPID": "509096",
+        "ExecMainStartTimestamp": "Mon 2026-10-12 17:18:34 CST",
+        "ExecMainStatus": "0"
+      },
+      "health": {
+        "status": 200,
+        "body": "ok"
+      }
+    },
+    {
+      "gateway": "47.251.8.196",
+      "beforeRevision": "d7ec5fbfae81cf9228fdd9d53c86e4c99d682b80",
+      "pluginRevision": "8a883b907dd46704de2946ff0e4edec26ed92d1f",
+      "pluginWorktreeClean": true,
+      "configFilesChecked": 3,
+      "configurationUnchanged": true,
+      "dependenciesChanged": false,
+      "service": {
+        "MainPID": "1374718",
+        "ExecMainStartTimestamp": "Mon 2026-10-12 17:20:28 CST",
+        "ExecMainStatus": "0",
+        "ActiveState": "active",
+        "SubState": "running"
+      },
+      "health": {
+        "status": 200,
+        "body": "ok"
+      }
+    }
+  ],
+  "publicServerHealth": {
+    "status": 200,
+    "body": "ok",
+    "endpoint": "http://47.251.8.196:8045/health"
+  },
+  "apk": {
+    "sha256": "6089e4a25674f5745a08da187a268c3aa129853dc5e5a8e904cdf45ab24e25d7",
+    "sizeBytes": 61715717,
+    "certificateSha256": "37d9445fab11d827b032b84b0739acb2c33aa8ace1f319ed20a4cc612624ce33",
+    "nightlyTarget": "d5e1838a04e8508845bb4fc6529e8edfcb776330",
+    "assetUrl": "https://github.com/1rua/open-android-intelligence/releases/download/nightly/app-full-debug.apk",
+    "copyProvenance": "9dc4cc9 已下载完整制品与 d5e1838 Nightly 资产摘要完全一致；重复下载中断后保留部分文件并用完整同摘要制品恢复本地副本，再次签名校验通过"
+  },
+  "phoneValidation": {
+    "logout": "用户已确认修复",
+    "normalReply": "用户已确认修复",
+    "attachments": "待本轮两处手机确认",
+    "visibleStreaming": "待本轮两处真实模型手机确认",
+    "retention": "待两处单独确认"
+  }
+}
