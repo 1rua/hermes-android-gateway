@@ -1,0 +1,32 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_ test_signed_turn_replies_over_sse_and_replay_never_runs_twice[message-batches] _
+/home/djbd/.local/share/uv/python/cpython-3.11.15-linux-x86_64-gnu/lib/python3.11/asyncio/tasks.py:500: in wait_for
+    return fut.result()
+           ^^^^^^^^^^^^
+/home/djbd/.local/share/uv/python/cpython-3.11.15-linux-x86_64-gnu/lib/python3.11/asyncio/locks.py:213: in wait
+    await fut
+E   asyncio.exceptions.CancelledError
+
+The above exception was the direct cause of the following exception:
+tests/test_batch_http_dispatch.py:177: in test_signed_turn_replies_over_sse_and_replay_never_runs_twice
+    asyncio.run(scenario())
+/home/djbd/.local/share/uv/python/cpython-3.11.15-linux-x86_64-gnu/lib/python3.11/asyncio/runners.py:190: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/home/djbd/.local/share/uv/python/cpython-3.11.15-linux-x86_64-gnu/lib/python3.11/asyncio/runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/home/djbd/.local/share/uv/python/cpython-3.11.15-linux-x86_64-gnu/lib/python3.11/asyncio/base_events.py:654: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+tests/test_batch_http_dispatch.py:148: in scenario
+    await asyncio.wait_for(entered.wait(), 5)
+/home/djbd/.local/share/uv/python/cpython-3.11.15-linux-x86_64-gnu/lib/python3.11/asyncio/tasks.py:502: in wait_for
+    raise exceptions.TimeoutError() from exc
+E   TimeoutError
+------------------------------ Captured log call -------------------------------
+WARNING  hermes.platforms.open_android:adapter.py:1963 [open_android] Inbound dispatch failed messageId=msg_46aa520d-0e56-4ef7-b11c-923715dff113 errorCode=AGENT_UNAVAILABLE
+=========================== short test summary info ============================
+FAILED tests/test_batch_http_dispatch.py::test_signed_turn_replies_over_sse_and_replay_never_runs_twice[message-batches]
+1 failed in 5.28s

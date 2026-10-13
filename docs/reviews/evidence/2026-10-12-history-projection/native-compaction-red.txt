@@ -1,0 +1,10 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_ test_native_compaction_retains_original_display_without_showing_model_summary _
+tests/test_native_history_projection.py:380: in test_native_compaction_retains_original_display_without_showing_model_summary
+    assert len(rows) == 1
+E   AssertionError: assert 2 == 1
+E    +  where 2 = len([{'clientMessageId': None, 'conversationId': 'conv_9dc157d1-0949-4b90-a07e-5f025e66a75b', 'messageId': 'msg_host_19fca...66a75b', 'messageId': 'msg_1b2488d1-1e80-4fc3-870d-dad822a1a83e', 'parts': [{'text': '原始纯文本提问', 'type': 'text'}], ...}])
+=========================== short test summary info ============================
+FAILED tests/test_native_history_projection.py::test_native_compaction_retains_original_display_without_showing_model_summary
+1 failed, 8 deselected in 0.17s

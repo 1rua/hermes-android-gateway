@@ -1,0 +1,4 @@
+Traceback (most recent call last):
+  File "/mnt/data/projects/open-android-intelligence/tmp/hermes-history-worktree-20261012/docs/reviews/evidence/2026-10-12-history-projection/native-history-source-unavailable-probe.py", line 13, in <module>
+    from test_batch_http_dispatch import NATIVE_HOST, _adapter
+ModuleNotFoundError: No module named 'test_batch_http_dispatch'

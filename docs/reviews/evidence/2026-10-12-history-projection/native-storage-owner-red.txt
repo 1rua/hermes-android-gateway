@@ -1,0 +1,10 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_ test_equal_message_identity_in_copied_gateway_storage_cannot_overwrite_other_owner _
+tests/test_native_history_projection.py:573: in test_equal_message_identity_in_copied_gateway_storage_cannot_overwrite_other_owner
+    assert len(before) == 1 and before[0]["text"] == payload["text"]
+E   assert (0 == 1)
+E    +  where 0 = len([])
+=========================== short test summary info ============================
+FAILED tests/test_native_history_projection.py::test_equal_message_identity_in_copied_gateway_storage_cannot_overwrite_other_owner
+1 failed, 13 deselected in 0.32s

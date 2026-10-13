@@ -1,0 +1,32 @@
+FFFF                                                                     [100%]
+=================================== FAILURES ===================================
+____ test_native_model_image_enrichment_does_not_replace_original_user_text ____
+tests/test_native_history_projection.py:52: in test_native_model_image_enrichment_does_not_replace_original_user_text
+    assert user["text"] == "请说明这张图片"
+E   AssertionError: assert '[模型专用合成图片描述]...用]\n\n请说明这张图片' == '请说明这张图片'
+E     
+E     + [模型专用合成图片描述]
+E     + [模型专用合成宿主媒体引用]
+E     + 
+E       请说明这张图片
+_ test_native_history_keeps_the_attachment_identity_and_metadata_of_the_user_message _
+tests/test_native_history_projection.py:107: in test_native_history_keeps_the_attachment_identity_and_metadata_of_the_user_message
+    assert expected_attachment in user["parts"]
+E   AssertionError: assert {'attachmentId': 'att_ae635440-ffe1-485c-bd56-fc7b116c1148', 'filename': 'synthetic.png', 'mediaType': 'image/png', 'sizeBytes': 21, ...} in [{'text': '请说明这张图片', 'type': 'text'}]
+_ test_native_tool_call_history_keeps_published_progress_and_has_no_empty_assistant_bubble _
+tests/test_native_history_projection.py:162: in test_native_tool_call_history_keeps_published_progress_and_has_no_empty_assistant_bubble
+    assert progress is not None, "实时显示的工具进度必须在重新打开会话后保留原身份"
+E   AssertionError: 实时显示的工具进度必须在重新打开会话后保留原身份
+E   assert None is not None
+_ test_native_empty_tool_call_scaffolding_is_not_projected_as_a_plain_assistant_message _
+tests/test_native_history_projection.py:189: in test_native_empty_tool_call_scaffolding_is_not_projected_as_a_plain_assistant_message
+    assert not any(
+E   AssertionError: 原生工具调用必须保留结构或排除内部空记录，不能显示空回复气泡
+E   assert not True
+E    +  where True = any(<generator object test_native_empty_tool_call_scaffolding_is_not_projected_as_a_plain_assistant_message.<locals>.<genexpr> at 0x7fbde56e9fc0>)
+=========================== short test summary info ============================
+FAILED tests/test_native_history_projection.py::test_native_model_image_enrichment_does_not_replace_original_user_text
+FAILED tests/test_native_history_projection.py::test_native_history_keeps_the_attachment_identity_and_metadata_of_the_user_message
+FAILED tests/test_native_history_projection.py::test_native_tool_call_history_keeps_published_progress_and_has_no_empty_assistant_bubble
+FAILED tests/test_native_history_projection.py::test_native_empty_tool_call_scaffolding_is_not_projected_as_a_plain_assistant_message
+4 failed in 0.77s

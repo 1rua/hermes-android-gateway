@@ -1,0 +1,31 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+__ test_native_consumer_delivers_three_progressive_updates_before_completion ___
+tests/test_native_streaming_delivery.py:85: in test_native_consumer_delivers_three_progressive_updates_before_completion
+    asyncio.run(scenario())
+/home/djbd/.local/share/uv/python/cpython-3.11.15-linux-x86_64-gnu/lib/python3.11/asyncio/runners.py:190: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/home/djbd/.local/share/uv/python/cpython-3.11.15-linux-x86_64-gnu/lib/python3.11/asyncio/runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/home/djbd/.local/share/uv/python/cpython-3.11.15-linux-x86_64-gnu/lib/python3.11/asyncio/base_events.py:654: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+tests/test_native_streaming_delivery.py:39: in scenario
+    assert await adapter.connect()
+E   assert False
+------------------------------ Captured log call -------------------------------
+ERROR    hermes.platforms.open_android:adapter.py:921 [open_android] Failed to start HTTP gateway: could not bind on any address out of [('127.0.0.1', 0)]
+Traceback (most recent call last):
+  File "/mnt/data/projects/open-android-intelligence/tmp/hermes-history-worktree-20261012/open_android_intelligence_gateway/adapter.py", line 910, in _connect_once
+    await self._site.start()
+  File "/mnt/data/projects/open-android-intelligence/tmp/hermes-history-deps-20261013/aiohttp/web_runner.py", line 138, in start
+    self._server = await loop.create_server(
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/djbd/.local/share/uv/python/cpython-3.11.15-linux-x86_64-gnu/lib/python3.11/asyncio/base_events.py", line 1539, in create_server
+    raise OSError('could not bind on any address out of %r'
+OSError: could not bind on any address out of [('127.0.0.1', 0)]
+=========================== short test summary info ============================
+FAILED tests/test_native_streaming_delivery.py::test_native_consumer_delivers_three_progressive_updates_before_completion
+1 failed in 0.42s

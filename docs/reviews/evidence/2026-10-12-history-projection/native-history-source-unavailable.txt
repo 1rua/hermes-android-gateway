@@ -1,0 +1,4 @@
+[open_android] Failed to deliver message to conv_0fac0d88-102c-4311-969d-18e19a97849a: HOST_HISTORY_UNAVAILABLE
+[open_android] Failed to deliver message to conv_84627916-3a41-4cd1-a3b0-b53ad0afe9b1: HOST_HISTORY_UNAVAILABLE
+连接前注入 HOST_HISTORY_UNAVAILABLE；没有完成事件
+连接后注入 HOST_HISTORY_UNAVAILABLE；没有完成事件

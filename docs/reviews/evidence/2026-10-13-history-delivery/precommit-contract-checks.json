@@ -1,0 +1,11 @@
+{
+  "androidBaseline": "d5e1838a04e8508845bb4fc6529e8edfcb776330",
+  "pluginBaseline": "c80e3cf6c12c418a4c198d44f25a97cb5f50868d",
+  "sdkRevision": "75b083e9399115b12513385252811f09c3503c90",
+  "schemaDiffEmpty": true,
+  "debugKeystoreDiffEmpty": true,
+  "hermesVectors": "66/66 pass",
+  "vectorsEvidenceSha256": "b5b16c750a064ea8a372bf50f58111a60da547a01120e423bdec4b85deacf8ed",
+  "manifestGate": "plugin manifest, entry point and protocol 2.1.0 checked",
+  "workflowSyntax": "Both CI YAML structures parsed successfully; this is not executed CI evidence"
+}

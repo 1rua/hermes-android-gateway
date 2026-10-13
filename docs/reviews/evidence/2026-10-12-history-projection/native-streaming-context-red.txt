@@ -1,0 +1,77 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+__ test_native_consumer_delivers_three_progressive_updates_before_completion ___
+tests/test_native_streaming_delivery.py:24: in _next_reply_event
+    event = await _next_event(stream)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_batch_http_dispatch.py:100: in _next_event
+    frame = (await response.content.readuntil(b"\n\n")).decode()
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../hermes-history-deps-20261013/aiohttp/streams.py:418: in readuntil
+    await self._wait("readuntil")
+../hermes-history-deps-20261013/aiohttp/streams.py:365: in _wait
+    await waiter
+E   asyncio.exceptions.CancelledError
+
+The above exception was the direct cause of the following exception:
+tests/test_native_streaming_delivery.py:85: in test_native_consumer_delivers_three_progressive_updates_before_completion
+    asyncio.run(scenario())
+/home/djbd/.local/share/uv/python/cpython-3.11.15-linux-x86_64-gnu/lib/python3.11/asyncio/runners.py:190: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/home/djbd/.local/share/uv/python/cpython-3.11.15-linux-x86_64-gnu/lib/python3.11/asyncio/runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/home/djbd/.local/share/uv/python/cpython-3.11.15-linux-x86_64-gnu/lib/python3.11/asyncio/base_events.py:654: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+tests/test_native_streaming_delivery.py:62: in scenario
+    event = await _next_reply_event(stream)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_native_streaming_delivery.py:22: in _next_reply_event
+    async with asyncio.timeout(2):
+/home/djbd/.local/share/uv/python/cpython-3.11.15-linux-x86_64-gnu/lib/python3.11/asyncio/timeouts.py:115: in __aexit__
+    raise TimeoutError from exc_val
+E   TimeoutError
+------------------------------ Captured log call -------------------------------
+ERROR    hermes.platforms.open_android:adapter.py:1025 [open_android] Failed to deliver message to conv_bd5cb7ca-cef7-4b67-b435-9c0f8b4fae1e: HOST_HISTORY_UNAVAILABLE
+ERROR    hermes.platforms.open_android:adapter.py:1025 [open_android] Failed to deliver message to conv_bd5cb7ca-cef7-4b67-b435-9c0f8b4fae1e: HOST_HISTORY_UNAVAILABLE
+ERROR    hermes.platforms.open_android:adapter.py:1025 [open_android] Failed to deliver message to conv_bd5cb7ca-cef7-4b67-b435-9c0f8b4fae1e: HOST_HISTORY_UNAVAILABLE
+ERROR    hermes.platforms.open_android:adapter.py:1025 [open_android] Failed to deliver message to conv_bd5cb7ca-cef7-4b67-b435-9c0f8b4fae1e: HOST_HISTORY_UNAVAILABLE
+ERROR    hermes.platforms.open_android:adapter.py:1025 [open_android] Failed to deliver message to conv_bd5cb7ca-cef7-4b67-b435-9c0f8b4fae1e: HOST_HISTORY_UNAVAILABLE
+ERROR    hermes.platforms.open_android:adapter.py:1025 [open_android] Failed to deliver message to conv_bd5cb7ca-cef7-4b67-b435-9c0f8b4fae1e: HOST_HISTORY_UNAVAILABLE
+ERROR    hermes.platforms.open_android:adapter.py:1025 [open_android] Failed to deliver message to conv_bd5cb7ca-cef7-4b67-b435-9c0f8b4fae1e: HOST_HISTORY_UNAVAILABLE
+ERROR    hermes.platforms.open_android:adapter.py:1025 [open_android] Failed to deliver message to conv_bd5cb7ca-cef7-4b67-b435-9c0f8b4fae1e: HOST_HISTORY_UNAVAILABLE
+ERROR    hermes.platforms.open_android:adapter.py:1025 [open_android] Failed to deliver message to conv_bd5cb7ca-cef7-4b67-b435-9c0f8b4fae1e: HOST_HISTORY_UNAVAILABLE
+ERROR    hermes.platforms.open_android:adapter.py:1025 [open_android] Failed to deliver message to conv_bd5cb7ca-cef7-4b67-b435-9c0f8b4fae1e: HOST_HISTORY_UNAVAILABLE
+ERROR    hermes.platforms.open_android:adapter.py:1025 [open_android] Failed to deliver message to conv_bd5cb7ca-cef7-4b67-b435-9c0f8b4fae1e: HOST_HISTORY_UNAVAILABLE
+ERROR    hermes.platforms.open_android:adapter.py:1025 [open_android] Failed to deliver message to conv_bd5cb7ca-cef7-4b67-b435-9c0f8b4fae1e: HOST_HISTORY_UNAVAILABLE
+ERROR    hermes.platforms.open_android:adapter.py:1025 [open_android] Failed to deliver message to conv_bd5cb7ca-cef7-4b67-b435-9c0f8b4fae1e: HOST_HISTORY_UNAVAILABLE
+ERROR    hermes.platforms.open_android:adapter.py:1025 [open_android] Failed to deliver message to conv_bd5cb7ca-cef7-4b67-b435-9c0f8b4fae1e: HOST_HISTORY_UNAVAILABLE
+ERROR    hermes.platforms.open_android:adapter.py:1025 [open_android] Failed to deliver message to conv_bd5cb7ca-cef7-4b67-b435-9c0f8b4fae1e: HOST_HISTORY_UNAVAILABLE
+ERROR    hermes.platforms.open_android:adapter.py:1025 [open_android] Failed to deliver message to conv_bd5cb7ca-cef7-4b67-b435-9c0f8b4fae1e: HOST_HISTORY_UNAVAILABLE
+ERROR    hermes.platforms.open_android:adapter.py:1025 [open_android] Failed to deliver message to conv_bd5cb7ca-cef7-4b67-b435-9c0f8b4fae1e: HOST_HISTORY_UNAVAILABLE
+ERROR    hermes.platforms.open_android:adapter.py:1025 [open_android] Failed to deliver message to conv_bd5cb7ca-cef7-4b67-b435-9c0f8b4fae1e: HOST_HISTORY_UNAVAILABLE
+ERROR    hermes.platforms.open_android:adapter.py:1025 [open_android] Failed to deliver message to conv_bd5cb7ca-cef7-4b67-b435-9c0f8b4fae1e: HOST_HISTORY_UNAVAILABLE
+ERROR    hermes.platforms.open_android:adapter.py:1025 [open_android] Failed to deliver message to conv_bd5cb7ca-cef7-4b67-b435-9c0f8b4fae1e: HOST_HISTORY_UNAVAILABLE
+ERROR    hermes.platforms.open_android:adapter.py:1025 [open_android] Failed to deliver message to conv_bd5cb7ca-cef7-4b67-b435-9c0f8b4fae1e: HOST_HISTORY_UNAVAILABLE
+ERROR    hermes.platforms.open_android:adapter.py:1025 [open_android] Failed to deliver message to conv_bd5cb7ca-cef7-4b67-b435-9c0f8b4fae1e: HOST_HISTORY_UNAVAILABLE
+ERROR    hermes.platforms.open_android:adapter.py:1025 [open_android] Failed to deliver message to conv_bd5cb7ca-cef7-4b67-b435-9c0f8b4fae1e: HOST_HISTORY_UNAVAILABLE
+ERROR    hermes.platforms.open_android:adapter.py:1025 [open_android] Failed to deliver message to conv_bd5cb7ca-cef7-4b67-b435-9c0f8b4fae1e: HOST_HISTORY_UNAVAILABLE
+ERROR    hermes.platforms.open_android:adapter.py:1025 [open_android] Failed to deliver message to conv_bd5cb7ca-cef7-4b67-b435-9c0f8b4fae1e: HOST_HISTORY_UNAVAILABLE
+ERROR    hermes.platforms.open_android:adapter.py:1025 [open_android] Failed to deliver message to conv_bd5cb7ca-cef7-4b67-b435-9c0f8b4fae1e: HOST_HISTORY_UNAVAILABLE
+ERROR    hermes.platforms.open_android:adapter.py:1025 [open_android] Failed to deliver message to conv_bd5cb7ca-cef7-4b67-b435-9c0f8b4fae1e: HOST_HISTORY_UNAVAILABLE
+ERROR    hermes.platforms.open_android:adapter.py:1025 [open_android] Failed to deliver message to conv_bd5cb7ca-cef7-4b67-b435-9c0f8b4fae1e: HOST_HISTORY_UNAVAILABLE
+ERROR    hermes.platforms.open_android:adapter.py:1025 [open_android] Failed to deliver message to conv_bd5cb7ca-cef7-4b67-b435-9c0f8b4fae1e: HOST_HISTORY_UNAVAILABLE
+ERROR    hermes.platforms.open_android:adapter.py:1025 [open_android] Failed to deliver message to conv_bd5cb7ca-cef7-4b67-b435-9c0f8b4fae1e: HOST_HISTORY_UNAVAILABLE
+ERROR    hermes.platforms.open_android:adapter.py:1025 [open_android] Failed to deliver message to conv_bd5cb7ca-cef7-4b67-b435-9c0f8b4fae1e: HOST_HISTORY_UNAVAILABLE
+ERROR    hermes.platforms.open_android:adapter.py:1025 [open_android] Failed to deliver message to conv_bd5cb7ca-cef7-4b67-b435-9c0f8b4fae1e: HOST_HISTORY_UNAVAILABLE
+ERROR    hermes.platforms.open_android:adapter.py:1025 [open_android] Failed to deliver message to conv_bd5cb7ca-cef7-4b67-b435-9c0f8b4fae1e: HOST_HISTORY_UNAVAILABLE
+ERROR    hermes.platforms.open_android:adapter.py:1025 [open_android] Failed to deliver message to conv_bd5cb7ca-cef7-4b67-b435-9c0f8b4fae1e: HOST_HISTORY_UNAVAILABLE
+ERROR    hermes.platforms.open_android:adapter.py:1025 [open_android] Failed to deliver message to conv_bd5cb7ca-cef7-4b67-b435-9c0f8b4fae1e: HOST_HISTORY_UNAVAILABLE
+ERROR    hermes.platforms.open_android:adapter.py:1025 [open_android] Failed to deliver message to conv_bd5cb7ca-cef7-4b67-b435-9c0f8b4fae1e: HOST_HISTORY_UNAVAILABLE
+ERROR    hermes.platforms.open_android:adapter.py:1025 [open_android] Failed to deliver message to conv_bd5cb7ca-cef7-4b67-b435-9c0f8b4fae1e: HOST_HISTORY_UNAVAILABLE
+ERROR    hermes.platforms.open_android:adapter.py:1025 [open_android] Failed to deliver message to conv_bd5cb7ca-cef7-4b67-b435-9c0f8b4fae1e: HOST_HISTORY_UNAVAILABLE
+=========================== short test summary info ============================
+FAILED tests/test_native_streaming_delivery.py::test_native_consumer_delivers_three_progressive_updates_before_completion
+1 failed in 2.93s

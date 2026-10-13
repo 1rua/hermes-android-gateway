@@ -796,8 +796,13 @@ class OpenAndroidPlatformAdapter(BasePlatformAdapter):
 
     def set_session_store(self, session_store: Any) -> None:
         super().set_session_store(session_store)
-        port=getattr(getattr(self.services.core,"history_reader",None),"__self__",None)
-        if port is not None: port.session_store=session_store
+        core = self.services.core
+        port = getattr(getattr(core, "history_reader", None), "__self__", None)
+        if port is not None:
+            port.session_store = session_store
+        elif session_store is not None:
+            from .host_history import HermesHistoryPort
+            core.history_reader = HermesHistoryPort(core, session_store).read
 
     def _native_generation_canceller(self) -> Any:
         runner=getattr(getattr(self,"_message_handler",None),"__self__",None)
@@ -876,7 +881,9 @@ class OpenAndroidPlatformAdapter(BasePlatformAdapter):
             core.approval_resolver = self._host_approval_resolver()
             core.generation_canceller = self._native_generation_canceller()
             from .host_history import HermesHistoryPort
-            core.history_reader = HermesHistoryPort(core, getattr(self, "_session_store", None)).read
+            session_store = getattr(self, "_session_store", None)
+            # 宿主历史只在原生会话储存已接入时提供，独立传输仍由 Core 短期队列负责。
+            core.history_reader = HermesHistoryPort(core, session_store).read if session_store is not None else None
         register_sink = getattr(core, "register_event_sink", None)
         if callable(register_sink):
             register_sink(self._event_sink)
@@ -1042,6 +1049,9 @@ class OpenAndroidPlatformAdapter(BasePlatformAdapter):
             account.conversations.record_assistant_message(chat_id,message_id,caption or "")
             payload=self._message_payload(chat_id,message_id,caption or "")
             payload["parts"].extend(HistoryMedia(account).reply_parts(message_id))
+            history_port = getattr(getattr(self.services.core, "history_reader", None), "__self__", None)
+            if callable(getattr(history_port, "record_visible", None)):
+                history_port.record_visible(account, payload)
             origin=resolve_origin(self.services.core,"",account_id,chat_id)
             account.events.append("conversation.message.completed",origin["messageId"] if origin else message_id,payload)
             return SendResult(success=True,message_id=message_id)
@@ -1175,6 +1185,12 @@ class OpenAndroidPlatformAdapter(BasePlatformAdapter):
                     account.conversations.record_assistant_message(chat_id, message_id, text, occurred_at)
                 except Exception as rec_err:
                     logger.warning("[open_android] Failed to record completed message: %s", rec_err)
+            history_port = getattr(getattr(self.services.core, "history_reader", None), "__self__", None)
+            if callable(getattr(history_port, "record_visible", None)):
+                saved = history_port.record_visible(account, payload,
+                    "CONFIRMED" if event_type == "conversation.message.completed" else "STREAMING")
+                if saved is not None:
+                    payload["timestamp"] = saved["timestamp"]
             from .device_tools import resolve_origin
             origin = resolve_origin(self.services.core,"",target_account,chat_id)
             correlation_id = origin["messageId"] if origin and origin.get("conversationId") == chat_id else message_id
@@ -1880,6 +1896,12 @@ class OpenAndroidPlatformAdapter(BasePlatformAdapter):
                 conv_id, source_account, force_new=False,
                 created_via=AgentSessionBindings.CREATED_VIA_INBOUND_MESSAGE,
             )
+            history_port = getattr(getattr(self.services.core, "history_reader", None), "__self__", None)
+            if dispatch_record is not None and callable(getattr(history_port, "capture_submission", None)):
+                from .history_media import HistoryMedia
+                HistoryMedia(account).adopt_inbound(conversation_id, dispatch_record["messageId"],
+                    dispatch_record["attachments"], media_urls)
+                history_port.capture_submission(account, dispatch_record)
 
             event = MessageEvent(
                 text=user_text,

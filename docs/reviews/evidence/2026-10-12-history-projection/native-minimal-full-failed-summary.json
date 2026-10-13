@@ -1,0 +1,17 @@
+{
+  "summary": "119 failed, 236 passed in 174.52s (0:02:54)",
+  "failureTypeCounts": {
+    "ValueError": 17,
+    "AssertionError": 5,
+    "RuntimeError": 3,
+    "TimeoutError": 5,
+    "OSError": 30,
+    "OperationalError": 53
+  },
+  "failedCaseCount": 119,
+  "largeLogBytes": 235831768,
+  "sha256": "a67b531e0201e0c9712de2c5cc5618d7d863314d94fa0fa80af4477bf83289ce",
+  "temporaryReviewFile": "open-android-intelligence/tmp/hermes-history-failed-evidence/native-minimal-full-pytest.txt",
+  "validImplementationConclusion": false,
+  "reason": "缺少既有 Native 平台注册前置条件、夹具 SDK 根变量，且 /tmp 16GiB 已满；需修正环境后重新验证。"
+}

@@ -1,0 +1,23 @@
+{
+  "pythonVersion": "3.11.15",
+  "sdkRevision": "75b083e9399115b12513385252811f09c3503c90",
+  "sdkAddedDependencies": {
+    "PyYAML": "6.0.3",
+    "httpx": "0.28.1"
+  },
+  "fixtureDependencies": {
+    "pytest": "9.1.1",
+    "aiohttp": "3.14.5",
+    "jsonschema": "4.26.0",
+    "cryptography": "50.0.2"
+  },
+  "nativeModules": {
+    "database": "hermes_state",
+    "store": "gateway.session",
+    "adapter": "gateway.platforms.base"
+  },
+  "databaseIsNative": true,
+  "databaseIsIsolated": true,
+  "fullHostDependenciesInstalled": false,
+  "systemSitePackagesDisabled": true
+}

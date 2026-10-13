@@ -1,0 +1,11 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+___________ test_unmatched_native_legacy_user_text_is_still_visible ____________
+tests/test_native_history_projection.py:212: in test_unmatched_native_legacy_user_text_is_still_visible
+    assert rows[0]["text"] == "旧宿主保留的原始纯文本"
+E   AssertionError: assert '' == '旧宿主保留的原始纯文本'
+E     
+E     - 旧宿主保留的原始纯文本
+=========================== short test summary info ============================
+FAILED tests/test_native_history_projection.py::test_unmatched_native_legacy_user_text_is_still_visible
+1 failed, 4 deselected in 0.26s

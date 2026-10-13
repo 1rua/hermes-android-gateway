@@ -1,0 +1,13 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_ test_host_media_registration_keeps_large_originals_without_blocking_delivery _
+tests/test_native_history_projection.py:232: in test_host_media_registration_keeps_large_originals_without_blocking_delivery
+    part = HistoryMedia(account).register(conversation, "msg_large", output)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+open_android_intelligence_gateway/history_media.py:117: in register
+    if not file.is_file() or file.stat().st_size>MAX_MEDIA_BYTES: raise GatewayError('ATTACHMENT_TOO_LARGE')
+                                                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   open_android_intelligence_gateway.core.GatewayError: ATTACHMENT_TOO_LARGE
+=========================== short test summary info ============================
+FAILED tests/test_native_history_projection.py::test_host_media_registration_keeps_large_originals_without_blocking_delivery
+1 failed, 5 deselected in 0.30s

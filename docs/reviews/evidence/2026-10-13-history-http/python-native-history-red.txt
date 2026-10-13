@@ -1,0 +1,26 @@
+.F                                                                       [100%]
+=================================== FAILURES ===================================
+_ test_native_history_fixture_preserves_original_text_tools_and_owned_image_over_http _
+tests/test_android_echo_fixture.py:199: in test_native_history_fixture_preserves_original_text_tools_and_owned_image_over_http
+    asyncio.run(scenario())
+/home/djbd/.local/share/uv/python/cpython-3.11.15-linux-x86_64-gnu/lib/python3.11/asyncio/runners.py:190: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/home/djbd/.local/share/uv/python/cpython-3.11.15-linux-x86_64-gnu/lib/python3.11/asyncio/runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/home/djbd/.local/share/uv/python/cpython-3.11.15-linux-x86_64-gnu/lib/python3.11/asyncio/base_events.py:654: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+tests/test_android_echo_fixture.py:161: in scenario
+    assert user["text"] == original
+E   AssertionError: assert '[模型专用合成图片描述]...图片\n保留这个原始文本。' == '请说明这张合成图片\n保留这个原始文本。'
+E     
+E     + [模型专用合成图片描述]
+E     + [模型专用合成宿主媒体引用]
+E     + 
+E       请说明这张合成图片
+E       保留这个原始文本。
+=========================== short test summary info ============================
+FAILED tests/test_android_echo_fixture.py::test_native_history_fixture_preserves_original_text_tools_and_owned_image_over_http
+1 failed, 1 passed, 6 deselected in 1.97s

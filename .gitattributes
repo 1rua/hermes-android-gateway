@@ -1,0 +1,2 @@
+# 原始验证日志保留字节内容，测试工具产生的行尾空白不做格式归一化。
+docs/reviews/evidence/**/*.txt whitespace=-blank-at-eol

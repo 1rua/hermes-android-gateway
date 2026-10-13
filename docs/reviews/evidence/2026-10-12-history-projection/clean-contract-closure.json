@@ -1,0 +1,219 @@
+{
+  "sourceRevision": "d5e1838a04e8508845bb4fc6529e8edfcb776330",
+  "sourceDirectory": "gateway-contract",
+  "fileCount": 42,
+  "allCopiedHashesMatch": true,
+  "files": [
+    {
+      "path": "gateway-contract/.gitignore",
+      "bytes": 90,
+      "sha256": "e16cfed59014ba9e55d484030d516ae3299da82daa018688115b4cbf978bad2b"
+    },
+    {
+      "path": "gateway-contract/core-dispatched-schemas.json",
+      "bytes": 27613,
+      "sha256": "de808953d24bde6c2f54d6571d1dcf3d46bc49132a469b0be198c8b3948b9955"
+    },
+    {
+      "path": "gateway-contract/package.json",
+      "bytes": 471,
+      "sha256": "f18370fd3eab3fa17d74959024b2a780334f2545885f810e7f8181b4b1da3737"
+    },
+    {
+      "path": "gateway-contract/schemas/attachment.schema.json",
+      "bytes": 1486,
+      "sha256": "0e6b26cc048d295731b94a7105a5cf2142670095b7f8c1f6ede52355c6997274"
+    },
+    {
+      "path": "gateway-contract/schemas/command-catalog.schema.json",
+      "bytes": 981,
+      "sha256": "d899d116048ef8f6cad083c9a65ff594e34ea206d236dba5598f4265208d0223"
+    },
+    {
+      "path": "gateway-contract/schemas/conversation-snapshot.schema.json",
+      "bytes": 1399,
+      "sha256": "be02f072ad1576d091a665901c482cbf5b2450206e7dd05a498bee2175a77adc"
+    },
+    {
+      "path": "gateway-contract/schemas/conversation.schema.json",
+      "bytes": 2671,
+      "sha256": "64f499abcf33a347d950ea6412c14d62e7ac88bd46244108a183ef6af972450e"
+    },
+    {
+      "path": "gateway-contract/schemas/device-request.schema.json",
+      "bytes": 3775,
+      "sha256": "dd815703a5c64be5b44048e691495763145a4c3292fa1e7f4233f8299861db64"
+    },
+    {
+      "path": "gateway-contract/schemas/envelope.schema.json",
+      "bytes": 2339,
+      "sha256": "a71b3ca92479a97b810c2c3932156ecbed837e464eb455f4e61f0fc4690cb876"
+    },
+    {
+      "path": "gateway-contract/schemas/event.schema.json",
+      "bytes": 11292,
+      "sha256": "e77f3717df6ead3baa6c5248a9c6740f1485a3b75ad6775af705b68432c3830e"
+    },
+    {
+      "path": "gateway-contract/schemas/negotiate.schema.json",
+      "bytes": 6433,
+      "sha256": "6eb50eb6fe6efb90ef6d1e7e99e59322f97a74edb6442bce5abcd434b8136aec"
+    },
+    {
+      "path": "gateway-contract/schemas/session.schema.json",
+      "bytes": 6409,
+      "sha256": "9deb20b4efe6c03ad65787410a75b5a9f3435d07d89ca4bb6caca21dfede5667"
+    },
+    {
+      "path": "gateway-contract/schemas/v1-bootstrap-export.schema.json",
+      "bytes": 2170,
+      "sha256": "eac1455effd5b1fea53bfff0524f7de75f776399d6796c70ddb2e8d4535f5ec3"
+    },
+    {
+      "path": "gateway-contract/src/core-schema-hash.ts",
+      "bytes": 1459,
+      "sha256": "d7b8ee5cd4cd98007acf0156c549f9663106a2bf474b0b7e3e02e6754d003262"
+    },
+    {
+      "path": "gateway-contract/src/dispatched-schema-validator.ts",
+      "bytes": 22974,
+      "sha256": "4172c1beffeeb70a7bc2c299ac3c4cc653a431ac69a0b12efc0b1552644729cc"
+    },
+    {
+      "path": "gateway-contract/src/request-signature.ts",
+      "bytes": 8186,
+      "sha256": "432ac9c7ad7d455cf6dacd1878d258d985d9e213fa3b5187f2f3b01978bd2d7f"
+    },
+    {
+      "path": "gateway-contract/src/schema-registry.ts",
+      "bytes": 9198,
+      "sha256": "a199bee7c25a7137f568d073aa8eb3edecc1144c4a3bb274d8ffdaf598ebf3c0"
+    },
+    {
+      "path": "gateway-contract/src/state-machines.ts",
+      "bytes": 5028,
+      "sha256": "3ba1647a14e3aef555f6aad428c0efa84c3fbc9d38fdbc119fc3d894bbe9f887"
+    },
+    {
+      "path": "gateway-contract/test/conversation-ui.test.ts",
+      "bytes": 3466,
+      "sha256": "6ec59b5d0cd42653ec14522ebb12b90d822069248762cf67e218436f01e570ff"
+    },
+    {
+      "path": "gateway-contract/test/cross-host-conformance.test.ts",
+      "bytes": 3735,
+      "sha256": "a3aa514d7ca410c87587256d6ace2f6e123a85800b588300eff71bd4f31b6812"
+    },
+    {
+      "path": "gateway-contract/test/dispatched-schema-validator.test.ts",
+      "bytes": 30836,
+      "sha256": "94f504cbc5422744337f81f859c02ac428bcd851139d96865598834a454fd1e4"
+    },
+    {
+      "path": "gateway-contract/test/golden-vectors.test.ts",
+      "bytes": 16564,
+      "sha256": "34bca67aa221f4632cb03d049e89011ed3d43d663b4ad936982bafef1a2a0f82"
+    },
+    {
+      "path": "gateway-contract/test/request-signature.test.ts",
+      "bytes": 8601,
+      "sha256": "8b4296f95860c30eb0c15fa1d8df0653013e1d8497431cd639b2195a3d542e4a"
+    },
+    {
+      "path": "gateway-contract/test/schema-registry.test.ts",
+      "bytes": 21668,
+      "sha256": "1ce027e97d9b95b078da62dc9693c35d50e84595215b3fca3f79289e2d8b8f7c"
+    },
+    {
+      "path": "gateway-contract/test/state-machines.test.ts",
+      "bytes": 5228,
+      "sha256": "ac1261ad8c03d313d77f8ad572b4c40b7c9ff02eeed5953e0df7fc256b7a35d0"
+    },
+    {
+      "path": "gateway-contract/tools/check-contract-pin.py",
+      "bytes": 6100,
+      "sha256": "04c21d93e6f83e822324cecb8aab694263333fd5ee5f5dc58bae589737f68cd2"
+    },
+    {
+      "path": "gateway-contract/tools/conformance-artifacts.ts",
+      "bytes": 10783,
+      "sha256": "274ac1411ffc9b4d92bce5bdbf341736b3d922f98ff4fbe821682276a653eb31"
+    },
+    {
+      "path": "gateway-contract/tools/run-hermes-conformance.py",
+      "bytes": 4265,
+      "sha256": "f1aa90d78e602e814590c599ec1c6981e3b7c1bd276a4e17a15f77c1ae2b7815"
+    },
+    {
+      "path": "gateway-contract/tools/run-openclaw-conformance.ts",
+      "bytes": 3649,
+      "sha256": "c81ef5fec5ef023233f89196143e7925d9389ab12225318ab9ea91acb8d43104"
+    },
+    {
+      "path": "gateway-contract/tools/test_check_contract_pin.py",
+      "bytes": 4165,
+      "sha256": "9de1b24c7729947506c88590af57f5bf830b2ec77e471a8479e5eed7e80e9653"
+    },
+    {
+      "path": "gateway-contract/tsconfig.json",
+      "bytes": 352,
+      "sha256": "cea58e7718ef1780d047dabc886bf8b44d7aa4996aa21f756b574ac05af86f91"
+    },
+    {
+      "path": "gateway-contract/tsconfig.tools.json",
+      "bytes": 329,
+      "sha256": "3a14021f8d65a5997ecb0679d7689aff68b9221c9b6cbf0a9047baf4806fabed"
+    },
+    {
+      "path": "gateway-contract/vectors/attachments.json",
+      "bytes": 1765,
+      "sha256": "c33b8b2e4fc55e6c41d91ff7424fa72c03e2a85769e1fc0b1ff172b287a9de5c"
+    },
+    {
+      "path": "gateway-contract/vectors/auth-sessions.json",
+      "bytes": 5733,
+      "sha256": "6b56eb7a6c6799c77cd2636f8282e13b06e6499eed4a3fc5a67ccb4e042c1ec8"
+    },
+    {
+      "path": "gateway-contract/vectors/conversation-ui.json",
+      "bytes": 1834,
+      "sha256": "039da7e2e793ccf4f83fdf43fd85c937c6fd1918cffc267a0b6cfd78b2ed4074"
+    },
+    {
+      "path": "gateway-contract/vectors/device-requests.json",
+      "bytes": 5561,
+      "sha256": "7262d52c85a35b9323228b840a9f1426dd9118928d702943dd519b607f882283"
+    },
+    {
+      "path": "gateway-contract/vectors/dispatched-schema-fixtures-1.0.0.schema.json",
+      "bytes": 5330,
+      "sha256": "50609441f7e4b0e31f5c47168b1310c20052d235aca963c168bd78e2fa507b5c"
+    },
+    {
+      "path": "gateway-contract/vectors/dispatched-schema-fixtures.json",
+      "bytes": 26275,
+      "sha256": "cc2ef22ccb7a4e162b51aa86cb14a59ce2ffdee20ac2f37db662de88f4d201b3"
+    },
+    {
+      "path": "gateway-contract/vectors/protocol-negotiation.json",
+      "bytes": 7032,
+      "sha256": "c4d82af8ee0f7c840c4b5e112ae16aa75edd98cce47ec8b0eaafe9847543e722"
+    },
+    {
+      "path": "gateway-contract/vectors/request-signatures.json",
+      "bytes": 3408,
+      "sha256": "f3f15cbd8fe052d3ca45d1ec4ce88a945d3d18bc11651b67a6a45c121c24a0ee"
+    },
+    {
+      "path": "gateway-contract/vectors/sse-events.json",
+      "bytes": 16433,
+      "sha256": "77937b4c9273b275746bfe4c234702b4510c2ae6c4acdccd7e9a31c668422149"
+    },
+    {
+      "path": "gateway-contract/vectors/vector-set-1.0.0.schema.json",
+      "bytes": 17436,
+      "sha256": "1af858648e0721d82225cfa69753c63f70d8b8ee9f8cefb5d0292926cbcf2d4b"
+    }
+  ],
+  "coreSchemaHash": "sha256:99309b87dec79f9c737b7d875a6e949ceffb6bb18b468d7ce98ca37d77dd3d50"
+}

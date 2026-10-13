@@ -1,0 +1,10 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+______ test_native_history_fixture_rejects_host_code_outside_explicit_sdk ______
+tests/test_android_echo_fixture.py:112: in test_native_history_fixture_rejects_host_code_outside_explicit_sdk
+    assert "HERMES_NATIVE_SOURCE_MISMATCH" in result.stderr
+E   assert 'HERMES_NATIVE_SOURCE_MISMATCH' in '[open_android] 主密钥来源不可用：主密钥文件权限过于宽松（0o777）：/mnt/data/projects/open-android-intelligence/tmp/oai-android-echo-ab6dwz45...oid_gateway_fixture.py", line 263, in run_echo_agent\n    raise RuntimeError("隔离适配器未成功启动")\nRuntimeError: 隔离适配器未成功启动\n'
+E    +  where '[open_android] 主密钥来源不可用：主密钥文件权限过于宽松（0o777）：/mnt/data/projects/open-android-intelligence/tmp/oai-android-echo-ab6dwz45...oid_gateway_fixture.py", line 263, in run_echo_agent\n    raise RuntimeError("隔离适配器未成功启动")\nRuntimeError: 隔离适配器未成功启动\n' = CompletedProcess(args=['/home/djbd/.local/bin/python3.11', '/mnt/data/projects/open-android-intelligence/tmp/hermes-hi...id_gateway_fixture.py", line 263, in run_echo_agent\n    raise RuntimeError("隔离适配器未成功启动")\nRuntimeError: 隔离适配器未成功启动\n').stderr
+=========================== short test summary info ============================
+FAILED tests/test_android_echo_fixture.py::test_native_history_fixture_rejects_host_code_outside_explicit_sdk
+1 failed, 8 deselected in 0.99s

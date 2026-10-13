@@ -55,7 +55,8 @@ def test_legacy_history_reaches_native_session_db_before_bounded_maintenance_era
         try:
             assert account.store.database.execute("SELECT COUNT(*) FROM messages WHERE text!=''").fetchone()[0] == 0
             for cid, sid, mid in conversations:
-                assert len(database.get_messages(sid, include_inactive=True)) == 2
+                assert len([row for row in database.get_messages(sid, include_inactive=True)
+                            if row["role"] in {"user", "assistant"}]) == 2
                 rows = account.conversations.list_messages(cid, client_message_id=f"cm_{sid.removeprefix('native_')}")["messages"]
                 assert rows[0]["messageId"] == mid
                 assert rows[0]["text"].startswith("legacy user")

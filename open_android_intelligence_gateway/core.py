@@ -4438,6 +4438,10 @@ class GatewayCore:
         paths = account_paths(self.storage_root, account_id)
         if not paths.root.is_dir():
             return False
+        history_port = getattr(self.history_reader, "__self__", None)
+        cleanup_history = getattr(history_port, "cleanup_account", None)
+        if callable(cleanup_history):
+            cleanup_history(account_id)
         shutil.rmtree(paths.root)
         return True
 
