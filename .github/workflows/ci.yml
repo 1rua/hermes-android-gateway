@@ -58,8 +58,10 @@ jobs:
           HERMES_TEST_ISOLATION: ${{ runner.temp }}/oai-native-hermes-ci
 
       - name: Verify the real Hermes native history and transports
+        # 正常矩阵约数十秒；停滞时保留具体用例与调用栈，避免无限占用流水线。
+        timeout-minutes: 5
         run: |
-          python -m pytest \
+          python -m pytest -vv -o faulthandler_timeout=30 \
             tests/test_native_history_complete.py \
             tests/test_native_history_projection.py \
             tests/test_native_streaming_delivery.py \
