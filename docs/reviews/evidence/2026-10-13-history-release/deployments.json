@@ -1,0 +1,24 @@
+{
+  "local": {
+    "beforeRevision": "8a883b907dd46704de2946ff0e4edec26ed92d1f",
+    "installedRevision": "9aa6a0661e76c31c2b1078890a4b48ef002fee10",
+    "worktreeClean": true,
+    "checkedConfigFiles": 3,
+    "configUnchanged": true,
+    "checkedMasterKeyFiles": 1,
+    "masterKeyUnchanged": true,
+    "healthHttpStatus": 200,
+    "service": "ActiveState=active\nSubState=running\nMainPID=920346\nExecMainStartTimestamp=Tue 2026-10-13 20:22:11 CST\nExecMainStatus=0"
+  },
+  "remote": {
+    "beforeRevision": "8a883b907dd46704de2946ff0e4edec26ed92d1f",
+    "installedRevision": "9aa6a0661e76c31c2b1078890a4b48ef002fee10",
+    "worktreeClean": true,
+    "checkedConfigFiles": 3,
+    "configUnchanged": true,
+    "checkedMasterKeyFiles": 1,
+    "masterKeyUnchanged": true,
+    "healthHttpStatus": 200,
+    "service": "MainPID=2027451\nExecMainStartTimestamp=Tue 2026-10-13 20:26:14 CST\nExecMainStatus=0\nActiveState=active\nSubState=running"
+  }
+}

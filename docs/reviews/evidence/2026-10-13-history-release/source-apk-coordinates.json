@@ -1,0 +1,17 @@
+{
+  "androidRevision": "d0fbfaeb9c0acda04dbe72fa9306d9109c54bdf1",
+  "pluginRevision": "9aa6a0661e76c31c2b1078890a4b48ef002fee10",
+  "sdkRevision": "75b083e9399115b12513385252811f09c3503c90",
+  "ci": {
+    "plugin": 38394963723,
+    "android": 38395462724,
+    "apk": 38395462723,
+    "nightly": 38395462666
+  },
+  "apk": {
+    "sizeBytes": 61781254,
+    "sha256": "853f80d8adcd435c1cafd47ae5a85780527f7bfe75bea0d1dafcec1bb57b0236",
+    "certificateSha256": "37d9445fab11d827b032b84b0739acb2c33aa8ace1f319ed20a4cc612624ce33",
+    "signatureVerified": true
+  }
+}
