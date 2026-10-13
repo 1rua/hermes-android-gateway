@@ -506,9 +506,9 @@ class HermesHistoryPort:
                 if not callable(write):
                     raise RuntimeError("HOST_HISTORY_UNAVAILABLE")
                 def clear_owned(conn):
-                    # 使用宿主写事务，范围只包含本插件、此账号的展示侧记录。
-                    for key, _ in database.list_meta_prefix(self._presentation_prefix(account_id)):
-                        conn.execute("DELETE FROM state_meta WHERE key=?", (key,))
+                    # 回调已持宿主写锁，读取回退会再次取同一锁；必须复用当前连接。
+                    prefix = self._presentation_prefix(account_id)
+                    conn.execute("DELETE FROM state_meta WHERE substr(key,1,?)=?", (len(prefix), prefix))
                     for session_id in sessions:
                         conn.execute("DELETE FROM messages WHERE session_id=? AND role='session_meta' "
                             "AND display_kind=? AND json_valid(display_metadata) "

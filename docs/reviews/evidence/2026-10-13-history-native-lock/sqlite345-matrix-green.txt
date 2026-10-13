@@ -1,0 +1,35 @@
+隔离 SQLite 对照版本： 3.45.0
+============================= test session starts ==============================
+platform linux -- Python 3.11.17, pytest-9.1.1, pluggy-1.6.0 -- /mnt/data/projects/open-android-intelligence/.toolchains/python-ci/cpython-3.11.17-linux-x86_64-gnu/bin/python3.11
+cachedir: .pytest_cache
+rootdir: /mnt/data/projects/open-android-intelligence/tmp/hermes-history-worktree-20261012
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collecting ... collected 24 items
+
+tmp/hermes-history-worktree-20261012/tests/test_native_history_complete.py::test_legacy_history_reaches_native_session_db_before_bounded_maintenance_erases_it PASSED [  4%]
+tmp/hermes-history-worktree-20261012/tests/test_native_history_projection.py::test_native_account_cleanup_with_writer_only_reads_preserves_other_owners PASSED [  8%]
+tmp/hermes-history-worktree-20261012/tests/test_native_history_projection.py::test_native_display_metadata_does_not_change_real_compaction_tail PASSED [ 12%]
+tmp/hermes-history-worktree-20261012/tests/test_native_history_projection.py::test_native_legacy_display_rows_migrate_once_without_changing_model_rows PASSED [ 16%]
+tmp/hermes-history-worktree-20261012/tests/test_native_history_projection.py::test_native_equal_notice_never_claims_an_unrelated_old_reply PASSED [ 20%]
+tmp/hermes-history-worktree-20261012/tests/test_native_history_projection.py::test_native_profile_rotation_cleans_the_owning_metadata_database PASSED [ 25%]
+tmp/hermes-history-worktree-20261012/tests/test_native_history_projection.py::test_native_explicit_same_identity_edit_updates_original_once PASSED [ 29%]
+tmp/hermes-history-worktree-20261012/tests/test_native_history_projection.py::test_native_asset_withdrawal_is_checked_at_each_entry_before_timeline[metadata] PASSED [ 33%]
+tmp/hermes-history-worktree-20261012/tests/test_native_history_projection.py::test_native_asset_withdrawal_is_checked_at_each_entry_before_timeline[grant] PASSED [ 37%]
+tmp/hermes-history-worktree-20261012/tests/test_native_history_projection.py::test_native_asset_withdrawal_is_checked_at_each_entry_before_timeline[content] PASSED [ 41%]
+tmp/hermes-history-worktree-20261012/tests/test_native_history_projection.py::test_native_model_image_enrichment_does_not_replace_original_user_text PASSED [ 45%]
+tmp/hermes-history-worktree-20261012/tests/test_native_history_projection.py::test_native_history_keeps_the_attachment_identity_and_metadata_of_the_user_message PASSED [ 50%]
+tmp/hermes-history-worktree-20261012/tests/test_native_history_projection.py::test_native_tool_call_history_keeps_published_progress_and_has_no_empty_assistant_bubble PASSED [ 54%]
+tmp/hermes-history-worktree-20261012/tests/test_native_history_projection.py::test_native_empty_tool_call_scaffolding_is_not_projected_as_a_plain_assistant_message PASSED [ 58%]
+tmp/hermes-history-worktree-20261012/tests/test_native_history_projection.py::test_unmatched_native_legacy_user_text_is_still_visible PASSED [ 62%]
+tmp/hermes-history-worktree-20261012/tests/test_native_history_projection.py::test_host_media_registration_keeps_large_originals_without_blocking_delivery PASSED [ 66%]
+tmp/hermes-history-worktree-20261012/tests/test_native_history_projection.py::test_large_uploaded_attachment_reaches_native_agent_and_retains_host_original PASSED [ 70%]
+tmp/hermes-history-worktree-20261012/tests/test_native_history_projection.py::test_presentation_updates_restart_without_changing_actual_native_model_replay PASSED [ 75%]
+tmp/hermes-history-worktree-20261012/tests/test_native_history_projection.py::test_native_compaction_retains_original_display_without_showing_model_summary PASSED [ 79%]
+tmp/hermes-history-worktree-20261012/tests/test_native_history_projection.py::test_captured_batch_members_keep_each_original_identity_and_text PASSED [ 83%]
+tmp/hermes-history-worktree-20261012/tests/test_native_history_projection.py::test_missing_old_gateway_original_uses_identity_without_guessing_model_text PASSED [ 87%]
+tmp/hermes-history-worktree-20261012/tests/test_native_history_projection.py::test_native_rewind_deletes_display_and_prevents_history_media_download PASSED [ 91%]
+tmp/hermes-history-worktree-20261012/tests/test_native_history_projection.py::test_account_delete_retires_only_owned_presentation_and_media PASSED [ 95%]
+tmp/hermes-history-worktree-20261012/tests/test_native_history_projection.py::test_equal_message_identity_in_copied_gateway_storage_cannot_overwrite_other_owner PASSED [100%]
+
+============================= 24 passed in 20.07s ==============================

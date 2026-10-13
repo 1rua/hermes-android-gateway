@@ -1,0 +1,84 @@
+test	Verify the real Hermes native history and transports	﻿2026-10-13T11:43:40.3799321Z ##[group]Run python -m pytest -vv -o faulthandler_timeout=30 \
+test	Verify the real Hermes native history and transports	2026-10-13T11:43:40.3799822Z ^[[36;1mpython -m pytest -vv -o faulthandler_timeout=30 \^[[0m
+test	Verify the real Hermes native history and transports	2026-10-13T11:43:40.3800161Z ^[[36;1m  tests/test_native_history_complete.py \^[[0m
+test	Verify the real Hermes native history and transports	2026-10-13T11:43:40.3800463Z ^[[36;1m  tests/test_native_history_projection.py \^[[0m
+test	Verify the real Hermes native history and transports	2026-10-13T11:43:40.3800752Z ^[[36;1m  tests/test_native_streaming_delivery.py \^[[0m
+test	Verify the real Hermes native history and transports	2026-10-13T11:43:40.3801056Z ^[[36;1m  tests/test_android_echo_fixture.py^[[0m
+test	Verify the real Hermes native history and transports	2026-10-13T11:43:40.3873343Z shell: /usr/bin/bash -e {0}
+test	Verify the real Hermes native history and transports	2026-10-13T11:43:40.3873700Z env:
+test	Verify the real Hermes native history and transports	2026-10-13T11:43:40.3873993Z   pythonLocation: /opt/hostedtoolcache/Python/3.11.17/x64
+test	Verify the real Hermes native history and transports	2026-10-13T11:43:40.3874414Z   PKG_CONFIG_PATH: /opt/hostedtoolcache/Python/3.11.17/x64/lib/pkgconfig
+test	Verify the real Hermes native history and transports	2026-10-13T11:43:40.3874796Z   Python_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.17/x64
+test	Verify the real Hermes native history and transports	2026-10-13T11:43:40.3875136Z   Python2_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.17/x64
+test	Verify the real Hermes native history and transports	2026-10-13T11:43:40.3875478Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.17/x64
+test	Verify the real Hermes native history and transports	2026-10-13T11:43:40.3875934Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.11.17/x64/lib
+test	Verify the real Hermes native history and transports	2026-10-13T11:43:40.3876449Z   OPEN_ANDROID_GATEWAY_CONTRACT_ROOT: /home/runner/work/hermes-gateway-plugin/hermes-gateway-plugin/.contract-source/gateway-contract
+test	Verify the real Hermes native history and transports	2026-10-13T11:43:40.3877070Z   HERMES_SDK_ROOT: /home/runner/work/hermes-gateway-plugin/hermes-gateway-plugin/.hermes-native-sdk
+test	Verify the real Hermes native history and transports	2026-10-13T11:43:40.3877607Z   PYTHONPATH: /home/runner/work/hermes-gateway-plugin/hermes-gateway-plugin/.hermes-native-sdk
+test	Verify the real Hermes native history and transports	2026-10-13T11:43:40.3878271Z   HERMES_HOME: /home/runner/work/_temp/oai-native-hermes-regression
+test	Verify the real Hermes native history and transports	2026-10-13T11:43:40.3878662Z   HERMES_TEST_ISOLATION: /home/runner/work/_temp/oai-native-hermes-regression
+test	Verify the real Hermes native history and transports	2026-10-13T11:43:40.3879005Z   OAI_REQUIRE_NATIVE_HERMES: 1
+test	Verify the real Hermes native history and transports	2026-10-13T11:43:40.3879235Z ##[endgroup]
+test	Verify the real Hermes native history and transports	2026-10-13T11:43:41.6471469Z ============================= test session starts ==============================
+test	Verify the real Hermes native history and transports	2026-10-13T11:43:41.6472494Z platform linux -- Python 3.11.17, pytest-9.1.1, pluggy-1.6.0 -- /opt/hostedtoolcache/Python/3.11.17/x64/bin/python
+test	Verify the real Hermes native history and transports	2026-10-13T11:43:41.6474239Z cachedir: .pytest_cache
+test	Verify the real Hermes native history and transports	2026-10-13T11:43:41.6474711Z rootdir: /home/runner/work/hermes-gateway-plugin/hermes-gateway-plugin
+test	Verify the real Hermes native history and transports	2026-10-13T11:43:41.6475246Z configfile: pyproject.toml
+test	Verify the real Hermes native history and transports	2026-10-13T11:43:41.6475582Z plugins: anyio-4.15.1
+test	Verify the real Hermes native history and transports	2026-10-13T11:43:41.8868150Z collecting ... collected 33 items
+test	Verify the real Hermes native history and transports	2026-10-13T11:43:41.8868507Z 
+test	Verify the real Hermes native history and transports	2026-10-13T11:43:43.0940361Z tests/test_native_history_complete.py::test_legacy_history_reaches_native_session_db_before_bounded_maintenance_erases_it PASSED [  3%]
+test	Verify the real Hermes native history and transports	2026-10-13T11:43:43.2598281Z tests/test_native_history_projection.py::test_native_display_metadata_does_not_change_real_compaction_tail PASSED [  6%]
+test	Verify the real Hermes native history and transports	2026-10-13T11:43:43.4354048Z tests/test_native_history_projection.py::test_native_legacy_display_rows_migrate_once_without_changing_model_rows PASSED [  9%]
+test	Verify the real Hermes native history and transports	2026-10-13T11:43:43.5441981Z tests/test_native_history_projection.py::test_native_equal_notice_never_claims_an_unrelated_old_reply PASSED [ 12%]
+test	Verify the real Hermes native history and transports	2026-10-13T11:44:13.5439712Z Timeout (0:00:30)!
+test	Verify the real Hermes native history and transports	2026-10-13T11:44:13.5440734Z Thread 0x00007f78fffff6c0 (most recent call first):
+test	Verify the real Hermes native history and transports	2026-10-13T11:44:13.5442015Z   File "/opt/hostedtoolcache/Python/3.11.17/x64/lib/python3.11/threading.py", line 327 in wait
+test	Verify the real Hermes native history and transports	2026-10-13T11:44:13.5456096Z   File "/home/runner/work/hermes-gateway-plugin/hermes-gateway-plugin/.hermes-native-sdk/gateway/status.py", line 119 in _run
+test	Verify the real Hermes native history and transports	2026-10-13T11:44:13.5456830Z   File "/opt/hostedtoolcache/Python/3.11.17/x64/lib/python3.11/threading.py", line 982 in run
+test	Verify the real Hermes native history and transports	2026-10-13T11:44:13.5457450Z   File "/opt/hostedtoolcache/Python/3.11.17/x64/lib/python3.11/threading.py", line 1045 in _bootstrap_inner
+test	Verify the real Hermes native history and transports	2026-10-13T11:44:13.5458198Z   File "/opt/hostedtoolcache/Python/3.11.17/x64/lib/python3.11/threading.py", line 1002 in _bootstrap
+test	Verify the real Hermes native history and transports	2026-10-13T11:44:13.5458519Z 
+test	Verify the real Hermes native history and transports	2026-10-13T11:44:13.5458650Z Thread 0x00007f790a9c6b80 (most recent call first):
+test	Verify the real Hermes native history and transports	2026-10-13T11:44:13.5459240Z   File "/home/runner/work/hermes-gateway-plugin/hermes-gateway-plugin/.hermes-native-sdk/hermes_state.py", line 901 in _read_ctx
+test	Verify the real Hermes native history and transports	2026-10-13T11:44:13.5460568Z   File "/opt/hostedtoolcache/Python/3.11.17/x64/lib/python3.11/contextlib.py", line 137 in __enter__
+test	Verify the real Hermes native history and transports	2026-10-13T11:44:13.5461333Z   File "/home/runner/work/hermes-gateway-plugin/hermes-gateway-plugin/.hermes-native-sdk/hermes_state.py", line 1097 in _read_retrying_ioerr
+test	Verify the real Hermes native history and transports	2026-10-13T11:44:13.5462169Z   File "/home/runner/work/hermes-gateway-plugin/hermes-gateway-plugin/.hermes-native-sdk/hermes_state.py", line 1083 in _read_all
+test	Verify the real Hermes native history and transports	2026-10-13T11:44:13.5463022Z   File "/home/runner/work/hermes-gateway-plugin/hermes-gateway-plugin/.hermes-native-sdk/hermes_state.py", line 1602 in list_meta_prefix
+test	Verify the real Hermes native history and transports	2026-10-13T11:44:13.5463896Z   File "/home/runner/work/hermes-gateway-plugin/hermes-gateway-plugin/open_android_intelligence_gateway/host_history.py", line 510 in clear_owned
+test	Verify the real Hermes native history and transports	2026-10-13T11:44:13.5464752Z   File "/home/runner/work/hermes-gateway-plugin/hermes-gateway-plugin/.hermes-native-sdk/hermes_state.py", line 980 in _execute_write
+test	Verify the real Hermes native history and transports	2026-10-13T11:44:13.5465637Z   File "/home/runner/work/hermes-gateway-plugin/hermes-gateway-plugin/open_android_intelligence_gateway/host_history.py", line 522 in cleanup_account
+test	Verify the real Hermes native history and transports	2026-10-13T11:44:13.5466685Z   File "/home/runner/work/hermes-gateway-plugin/hermes-gateway-plugin/tests/test_native_history_projection.py", line 143 in test_native_profile_rotation_cleans_the_owning_metadata_database
+test	Verify the real Hermes native history and transports	2026-10-13T11:44:13.5467648Z   File "/opt/hostedtoolcache/Python/3.11.17/x64/lib/python3.11/site-packages/_pytest/python.py", line 167 in pytest_pyfunc_call
+test	Verify the real Hermes native history and transports	2026-10-13T11:44:13.5468505Z   File "/opt/hostedtoolcache/Python/3.11.17/x64/lib/python3.11/site-packages/pluggy/_callers.py", line 121 in _multicall
+test	Verify the real Hermes native history and transports	2026-10-13T11:44:13.5469207Z   File "/opt/hostedtoolcache/Python/3.11.17/x64/lib/python3.11/site-packages/pluggy/_manager.py", line 120 in _hookexec
+test	Verify the real Hermes native history and transports	2026-10-13T11:44:13.5469911Z   File "/opt/hostedtoolcache/Python/3.11.17/x64/lib/python3.11/site-packages/pluggy/_hooks.py", line 512 in __call__
+test	Verify the real Hermes native history and transports	2026-10-13T11:44:13.5470643Z   File "/opt/hostedtoolcache/Python/3.11.17/x64/lib/python3.11/site-packages/_pytest/python.py", line 1707 in runtest
+test	Verify the real Hermes native history and transports	2026-10-13T11:44:13.5471575Z   File "/opt/hostedtoolcache/Python/3.11.17/x64/lib/python3.11/site-packages/_pytest/runner.py", line 184 in pytest_runtest_call
+test	Verify the real Hermes native history and transports	2026-10-13T11:44:13.5472318Z   File "/opt/hostedtoolcache/Python/3.11.17/x64/lib/python3.11/site-packages/pluggy/_callers.py", line 121 in _multicall
+test	Verify the real Hermes native history and transports	2026-10-13T11:44:13.5473029Z   File "/opt/hostedtoolcache/Python/3.11.17/x64/lib/python3.11/site-packages/pluggy/_manager.py", line 120 in _hookexec
+test	Verify the real Hermes native history and transports	2026-10-13T11:44:13.5473739Z   File "/opt/hostedtoolcache/Python/3.11.17/x64/lib/python3.11/site-packages/pluggy/_hooks.py", line 512 in __call__
+test	Verify the real Hermes native history and transports	2026-10-13T11:44:13.5474447Z   File "/opt/hostedtoolcache/Python/3.11.17/x64/lib/python3.11/site-packages/_pytest/runner.py", line 250 in <lambda>
+test	Verify the real Hermes native history and transports	2026-10-13T11:44:13.5475176Z   File "/opt/hostedtoolcache/Python/3.11.17/x64/lib/python3.11/site-packages/_pytest/runner.py", line 361 in from_call
+test	Verify the real Hermes native history and transports	2026-10-13T11:44:13.5475941Z   File "/opt/hostedtoolcache/Python/3.11.17/x64/lib/python3.11/site-packages/_pytest/runner.py", line 249 in call_and_report
+test	Verify the real Hermes native history and transports	2026-10-13T11:44:13.5476696Z   File "/opt/hostedtoolcache/Python/3.11.17/x64/lib/python3.11/site-packages/_pytest/runner.py", line 139 in runtestprotocol
+test	Verify the real Hermes native history and transports	2026-10-13T11:44:13.5477494Z   File "/opt/hostedtoolcache/Python/3.11.17/x64/lib/python3.11/site-packages/_pytest/runner.py", line 118 in pytest_runtest_protocol
+test	Verify the real Hermes native history and transports	2026-10-13T11:44:13.5478377Z   File "/opt/hostedtoolcache/Python/3.11.17/x64/lib/python3.11/site-packages/pluggy/_callers.py", line 121 in _multicall
+test	Verify the real Hermes native history and transports	2026-10-13T11:44:13.5479129Z   File "/opt/hostedtoolcache/Python/3.11.17/x64/lib/python3.11/site-packages/pluggy/_manager.py", line 120 in _hookexec
+test	Verify the real Hermes native history and transports	2026-10-13T11:44:13.5479827Z   File "/opt/hostedtoolcache/Python/3.11.17/x64/lib/python3.11/site-packages/pluggy/_hooks.py", line 512 in __call__
+test	Verify the real Hermes native history and transports	2026-10-13T11:44:13.5480545Z   File "/opt/hostedtoolcache/Python/3.11.17/x64/lib/python3.11/site-packages/_pytest/main.py", line 408 in pytest_runtestloop
+test	Verify the real Hermes native history and transports	2026-10-13T11:44:13.5481446Z   File "/opt/hostedtoolcache/Python/3.11.17/x64/lib/python3.11/site-packages/pluggy/_callers.py", line 121 in _multicall
+test	Verify the real Hermes native history and transports	2026-10-13T11:44:13.5482160Z   File "/opt/hostedtoolcache/Python/3.11.17/x64/lib/python3.11/site-packages/pluggy/_manager.py", line 120 in _hookexec
+test	Verify the real Hermes native history and transports	2026-10-13T11:44:13.5482846Z   File "/opt/hostedtoolcache/Python/3.11.17/x64/lib/python3.11/site-packages/pluggy/_hooks.py", line 512 in __call__
+test	Verify the real Hermes native history and transports	2026-10-13T11:44:13.5483519Z   File "/opt/hostedtoolcache/Python/3.11.17/x64/lib/python3.11/site-packages/_pytest/main.py", line 384 in _main
+test	Verify the real Hermes native history and transports	2026-10-13T11:44:13.5484200Z   File "/opt/hostedtoolcache/Python/3.11.17/x64/lib/python3.11/site-packages/_pytest/main.py", line 330 in wrap_session
+test	Verify the real Hermes native history and transports	2026-10-13T11:44:13.5484929Z   File "/opt/hostedtoolcache/Python/3.11.17/x64/lib/python3.11/site-packages/_pytest/main.py", line 377 in pytest_cmdline_main
+test	Verify the real Hermes native history and transports	2026-10-13T11:44:13.5485655Z   File "/opt/hostedtoolcache/Python/3.11.17/x64/lib/python3.11/site-packages/pluggy/_callers.py", line 121 in _multicall
+test	Verify the real Hermes native history and transports	2026-10-13T11:44:13.5486373Z   File "/opt/hostedtoolcache/Python/3.11.17/x64/lib/python3.11/site-packages/pluggy/_manager.py", line 120 in _hookexec
+test	Verify the real Hermes native history and transports	2026-10-13T11:44:13.5487055Z   File "/opt/hostedtoolcache/Python/3.11.17/x64/lib/python3.11/site-packages/pluggy/_hooks.py", line 512 in __call__
+test	Verify the real Hermes native history and transports	2026-10-13T11:44:13.5487883Z   File "/opt/hostedtoolcache/Python/3.11.17/x64/lib/python3.11/site-packages/_pytest/config/__init__.py", line 229 in _main
+test	Verify the real Hermes native history and transports	2026-10-13T11:44:13.5488675Z   File "/opt/hostedtoolcache/Python/3.11.17/x64/lib/python3.11/site-packages/_pytest/config/__init__.py", line 253 in _console_main
+test	Verify the real Hermes native history and transports	2026-10-13T11:44:13.5489419Z   File "/opt/hostedtoolcache/Python/3.11.17/x64/lib/python3.11/site-packages/pytest/__main__.py", line 9 in <module>
+test	Verify the real Hermes native history and transports	2026-10-13T11:44:13.5489913Z   File "<frozen runpy>", line 88 in _run_code
+test	Verify the real Hermes native history and transports	2026-10-13T11:44:13.5490255Z   File "<frozen runpy>", line 198 in _run_module_as_main
+test	Verify the real Hermes native history and transports	2026-10-13T11:48:52.8874516Z ##[error]The action 'Verify the real Hermes native history and transports' has timed out after 5 minutes.

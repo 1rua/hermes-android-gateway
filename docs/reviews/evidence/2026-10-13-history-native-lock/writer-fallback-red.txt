@@ -1,0 +1,95 @@
+============================= test session starts ==============================
+platform linux -- Python 3.11.17, pytest-9.1.1, pluggy-1.6.0 -- /mnt/data/projects/open-android-intelligence/.toolchains/python-ci/cpython-3.11.17-linux-x86_64-gnu/bin/python3.11
+cachedir: .pytest_cache
+rootdir: /mnt/data/projects/open-android-intelligence/tmp/hermes-history-lock-baseline-76cff3e
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collecting ... collected 1 item
+
+tmp/hermes-history-lock-baseline-76cff3e/tests/test_native_history_projection.py::test_native_account_cleanup_with_writer_only_reads_preserves_other_owners FAILED [100%]
+
+=================================== FAILURES ===================================
+__ test_native_account_cleanup_with_writer_only_reads_preserves_other_owners ___
+
+tmp_path = PosixPath('/tmp/oai-lock-red-valid-contract-20261013-nTnTY7/tests/test_native_account_cleanup_wi0')
+
+    def test_native_account_cleanup_with_writer_only_reads_preserves_other_owners(tmp_path):
+        pytest.importorskip("hermes_state")
+        # 宿主读取可回退到非重入写锁；独立进程限时，回归失败不能挂住整条流水线。
+        script = r'''
+    from pathlib import Path
+    from types import SimpleNamespace
+    import sys
+    sys.path.insert(0, "tests")
+    from hermes_state import SessionDB
+    from open_android_intelligence_gateway.core import create_gateway_core
+    from open_android_intelligence_gateway.host_history import HermesHistoryPort
+    from test_support import make_secret_store
+    
+    root = Path(sys.argv[1])
+    database = SessionDB(root / "native.db")
+    core = create_gateway_core(root / "gateway", secret_store=make_secret_store())
+    port = HermesHistoryPort(core, SimpleNamespace(_db=database))
+    for owner in ("acct_cleanup", "acct_keep"):
+        account = core.open_gateway_account(owner)
+        try:
+            conversation = account.conversations.create("cc_" + owner, "合成清理", "cor_" + owner)["conversationId"]
+            session = "native_" + owner
+            database.create_session(session, "open_android")
+            account.agent_sessions.record(conversation, "inbound-message")
+            assert account.agent_sessions.attach(conversation, session)
+            database.append_message(session, "assistant", "保留模型原文", timestamp=1)
+            port.record_visible(account, {"messageId":"msg_" + owner, "conversationId":conversation,
+                "sender":"assistant", "text":"合成展示原文", "parts":[{"type":"text", "text":"合成展示原文"}], "timestamp":1000})
+        finally:
+            account.close()
+    model = {owner:database.get_messages("native_" + owner) for owner in ("acct_cleanup", "acct_keep")}
+    owned_prefix = port._presentation_prefix("acct_cleanup")
+    near_key = owned_prefix.replace("_", "X") + "neighbor"
+    database.set_meta(near_key, "保留不匹配的命名空间")
+    database._checkout_read_conn = lambda: None
+    port.cleanup_account("acct_cleanup")
+    assert database.list_meta_prefix(owned_prefix) == []
+    assert len(database.list_meta_prefix(port._presentation_prefix("acct_keep"))) == 1
+    assert database.get_meta(near_key) == "保留不匹配的命名空间"
+    for owner, expected in model.items():
+        assert database.get_messages("native_" + owner) == expected
+    database.close()
+    print("原生读取回退下清理成功，模型行及其他归属保持")
+    '''
+>       result = subprocess.run([sys.executable, "-c", script, str(tmp_path)],
+            cwd=Path(__file__).resolve().parents[1], env=dict(os.environ),
+            capture_output=True, text=True, timeout=10)
+
+tmp/hermes-history-lock-baseline-76cff3e/tests/test_native_history_projection.py:67: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+.toolchains/python-ci/cpython-3.11.17-linux-x86_64-gnu/lib/python3.11/subprocess.py:550: in run
+    stdout, stderr = process.communicate(input, timeout=timeout)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.toolchains/python-ci/cpython-3.11.17-linux-x86_64-gnu/lib/python3.11/subprocess.py:1209: in communicate
+    stdout, stderr = self._communicate(input, endtime, timeout)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.toolchains/python-ci/cpython-3.11.17-linux-x86_64-gnu/lib/python3.11/subprocess.py:2116: in _communicate
+    self._check_timeout(endtime, orig_timeout, stdout, stderr)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <Popen: returncode: -9 args: ['/mnt/data/projects/open-android-intelligence/...>
+endtime = 35953.25025352, orig_timeout = 10, stdout_seq = [], stderr_seq = []
+skip_check_and_raise = False
+
+    def _check_timeout(self, endtime, orig_timeout, stdout_seq, stderr_seq,
+                       skip_check_and_raise=False):
+        """Convenience for checking if a timeout has expired."""
+        if endtime is None:
+            return
+        if skip_check_and_raise or _time() > endtime:
+>           raise TimeoutExpired(
+                    self.args, orig_timeout,
+                    output=b''.join(stdout_seq) if stdout_seq else None,
+                    stderr=b''.join(stderr_seq) if stderr_seq else None)
+E           subprocess.TimeoutExpired: Command '['/mnt/data/projects/open-android-intelligence/.toolchains/python-ci/cpython-3.11.17-linux-x86_64-gnu/bin/python3.11', '-c', '\nfrom pathlib import Path\nfrom types import SimpleNamespace\nimport sys\nsys.path.insert(0, "tests")\nfrom hermes_state import SessionDB\nfrom open_android_intelligence_gateway.core import create_gateway_core\nfrom open_android_intelligence_gateway.host_history import HermesHistoryPort\nfrom test_support import make_secret_store\n\nroot = Path(sys.argv[1])\ndatabase = SessionDB(root / "native.db")\ncore = create_gateway_core(root / "gateway", secret_store=make_secret_store())\nport = HermesHistoryPort(core, SimpleNamespace(_db=database))\nfor owner in ("acct_cleanup", "acct_keep"):\n    account = core.open_gateway_account(owner)\n    try:\n        conversation = account.conversations.create("cc_" + owner, "合成清理", "cor_" + owner)["conversationId"]\n        session = "native_" + owner\n        database.create_session(session, "open_android")\n        account.agent_sessions.record(conversation, "inbound-message")\n        assert account.agent_sessions.attach(conversation, session)\n        database.append_message(session, "assistant", "保留模型原文", timestamp=1)\n        port.record_visible(account, {"messageId":"msg_" + owner, "conversationId":conversation,\n            "sender":"assistant", "text":"合成展示原文", "parts":[{"type":"text", "text":"合成展示原文"}], "timestamp":1000})\n    finally:\n        account.close()\nmodel = {owner:database.get_messages("native_" + owner) for owner in ("acct_cleanup", "acct_keep")}\nowned_prefix = port._presentation_prefix("acct_cleanup")\nnear_key = owned_prefix.replace("_", "X") + "neighbor"\ndatabase.set_meta(near_key, "保留不匹配的命名空间")\ndatabase._checkout_read_conn = lambda: None\nport.cleanup_account("acct_cleanup")\nassert database.list_meta_prefix(owned_prefix) == []\nassert len(database.list_meta_prefix(port._presentation_prefix("acct_keep"))) == 1\nassert database.get_meta(near_key) == "保留不匹配的命名空间"\nfor owner, expected in model.items():\n    assert database.get_messages("native_" + owner) == expected\ndatabase.close()\nprint("原生读取回退下清理成功，模型行及其他归属保持")\n', '/tmp/oai-lock-red-valid-contract-20261013-nTnTY7/tests/test_native_account_cleanup_wi0']' timed out after 10 seconds
+
+.toolchains/python-ci/cpython-3.11.17-linux-x86_64-gnu/lib/python3.11/subprocess.py:1253: TimeoutExpired
+=========================== short test summary info ============================
+FAILED tmp/hermes-history-lock-baseline-76cff3e/tests/test_native_history_projection.py::test_native_account_cleanup_with_writer_only_reads_preserves_other_owners - subprocess.TimeoutExpired: Command '['/mnt/data/projects/open-android-intelligence/.toolchains/python-ci/cpython-3.11.17-linux-x86_64-gnu/bin/python3.11', '-c', '\nfrom pathlib import Path\nfrom types import SimpleNamespace\nimport sys\nsys.path.insert(0, "tests")\nfrom hermes_state import SessionDB\nfrom open_android_intelligence_gateway.core import create_gateway_core\nfrom open_android_intelligence_gateway.host_history import HermesHistoryPort\nfrom test_support import make_secret_store\n\nroot = Path(sys.argv[1])\ndatabase = SessionDB(root / "native.db")\ncore = create_gateway_core(root / "gateway", secret_store=make_secret_store())\nport = HermesHistoryPort(core, SimpleNamespace(_db=database))\nfor owner in ("acct_cleanup", "acct_keep"):\n    account = core.open_gateway_account(owner)\n    try:\n        conversation = account.conversations.create("cc_" + owner, "合成清理", "cor_" + owner)["conversationId"]\n        session = "native_" + owner\n        database.create_session(session, "open_android")\n        account.agent_sessions.record(conversation, "inbound-message")\n        assert account.agent_sessions.attach(conversation, session)\n        database.append_message(session, "assistant", "保留模型原文", timestamp=1)\n        port.record_visible(account, {"messageId":"msg_" + owner, "conversationId":conversation,\n            "sender":"assistant", "text":"合成展示原文", "parts":[{"type":"text", "text":"合成展示原文"}], "timestamp":1000})\n    finally:\n        account.close()\nmodel = {owner:database.get_messages("native_" + owner) for owner in ("acct_cleanup", "acct_keep")}\nowned_prefix = port._presentation_prefix("acct_cleanup")\nnear_key = owned_prefix.replace("_", "X") + "neighbor"\ndatabase.set_meta(near_key, "保留不匹配的命名空间")\ndatabase._checkout_read_conn = lambda: None\nport.cleanup_account("acct_cleanup")\nassert database.list_meta_prefix(owned_prefix) == []\nassert len(database.list_meta_prefix(port._presentation_prefix("acct_keep"))) == 1\nassert database.get_meta(near_key) == "保留不匹配的命名空间"\nfor owner, expected in model.items():\n    assert database.get_messages("native_" + owner) == expected\ndatabase.close()\nprint("原生读取回退下清理成功，模型行及其他归属保持")\n', '/tmp/oai-lock-red-valid-contract-20261013-nTnTY7/tests/test_native_account_cleanup_wi0']' timed out after 10 seconds
+============================== 1 failed in 17.77s ==============================

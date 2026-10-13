@@ -5,7 +5,9 @@ from types import SimpleNamespace
 import asyncio
 import hashlib
 import json
+import os
 import shutil
+import subprocess
 import sys
 
 import pytest
@@ -16,6 +18,57 @@ from open_android_intelligence_gateway.core import create_gateway_core
 from open_android_intelligence_gateway.host_history import HermesHistoryPort
 from open_android_intelligence_gateway.history_media import HistoryMedia
 from test_support import make_secret_store
+
+
+def test_native_account_cleanup_with_writer_only_reads_preserves_other_owners(tmp_path):
+    pytest.importorskip("hermes_state")
+    # 宿主读取可回退到非重入写锁；独立进程限时，回归失败不能挂住整条流水线。
+    script = r'''
+from pathlib import Path
+from types import SimpleNamespace
+import sys
+sys.path.insert(0, "tests")
+from hermes_state import SessionDB
+from open_android_intelligence_gateway.core import create_gateway_core
+from open_android_intelligence_gateway.host_history import HermesHistoryPort
+from test_support import make_secret_store
+
+root = Path(sys.argv[1])
+database = SessionDB(root / "native.db")
+core = create_gateway_core(root / "gateway", secret_store=make_secret_store())
+port = HermesHistoryPort(core, SimpleNamespace(_db=database))
+for owner in ("acct_cleanup", "acct_keep"):
+    account = core.open_gateway_account(owner)
+    try:
+        conversation = account.conversations.create("cc_" + owner, "合成清理", "cor_" + owner)["conversationId"]
+        session = "native_" + owner
+        database.create_session(session, "open_android")
+        account.agent_sessions.record(conversation, "inbound-message")
+        assert account.agent_sessions.attach(conversation, session)
+        database.append_message(session, "assistant", "保留模型原文", timestamp=1)
+        port.record_visible(account, {"messageId":"msg_" + owner, "conversationId":conversation,
+            "sender":"assistant", "text":"合成展示原文", "parts":[{"type":"text", "text":"合成展示原文"}], "timestamp":1000})
+    finally:
+        account.close()
+model = {owner:database.get_messages("native_" + owner) for owner in ("acct_cleanup", "acct_keep")}
+owned_prefix = port._presentation_prefix("acct_cleanup")
+near_key = owned_prefix.replace("_", "X") + "neighbor"
+database.set_meta(near_key, "保留不匹配的命名空间")
+database._checkout_read_conn = lambda: None
+port.cleanup_account("acct_cleanup")
+assert database.list_meta_prefix(owned_prefix) == []
+assert len(database.list_meta_prefix(port._presentation_prefix("acct_keep"))) == 1
+assert database.get_meta(near_key) == "保留不匹配的命名空间"
+for owner, expected in model.items():
+    assert database.get_messages("native_" + owner) == expected
+database.close()
+print("原生读取回退下清理成功，模型行及其他归属保持")
+'''
+    result = subprocess.run([sys.executable, "-c", script, str(tmp_path)],
+        cwd=Path(__file__).resolve().parents[1], env=dict(os.environ),
+        capture_output=True, text=True, timeout=10)
+    assert result.returncode == 0, result.stderr
+    assert "原生读取回退下清理成功" in result.stdout
 
 
 def test_native_display_metadata_does_not_change_real_compaction_tail(tmp_path):
