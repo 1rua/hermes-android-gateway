@@ -91,10 +91,10 @@ class HistoryMedia:
                 self._retire_path(partial)
                 raise
         return parts
-    def mark_message_deleted(self, message_id):
+    def mark_message_deleted(self, message_id, conversation_id=None):
         for row in self.store.database.execute("SELECT key,value FROM account_metadata WHERE substr(key,1,14)='history-media:'").fetchall():
             record=self.store.open_json(row[1],row[0])
-            if record.get('messageId')==message_id and not record.get('deleted'):
+            if record.get('messageId')==message_id and (conversation_id is None or record.get('conversationId')==conversation_id) and not record.get('deleted'):
                 record['deleted']=True
                 self._put(row[0],record)
     def reply_parts(self, message_id):
@@ -125,7 +125,18 @@ class HistoryMedia:
         if not row or row['conversationId']!=conversation_id: raise GatewayError('ATTACHMENT_NOT_FOUND')
         self.account.conversations.get(conversation_id)
         return row
+    def _refresh_host_state(self,conversation_id,media_id):
+        reader=self.account.conversations.history_reader
+        port=getattr(reader,'__self__',None)
+        verify=getattr(port,'media_message_deleted',None)
+        if callable(verify):
+            # 使用当前账号事务，只读核对宿主，避免重开写事务造成 SQLite 锁冲突。
+            record=self._record(conversation_id,media_id)
+            if verify(self.account,conversation_id,record['messageId']):
+                self.mark_message_deleted(record['messageId'],conversation_id)
     def metadata(self,conversation_id,media_id):
+        self._record(conversation_id,media_id)
+        self._refresh_host_state(conversation_id,media_id)
         row=self._record(conversation_id,media_id)
         try:
             file=Path(row['path']) if row.get('path') else None
@@ -143,6 +154,9 @@ class HistoryMedia:
         return {'grantId':token,'expiresAt':expires,'metadata':metadata}
     def content(self,conversation_id,media_id,token,context,now=None):
         key='history-media-grant:'+hashlib.sha256(token.encode()).hexdigest()
+        saved=self._get(key)
+        if not saved or _now(saved['expiresAt'])<=_now(now) or any(saved[k]!=v for k,v in {'attachmentId':media_id,'conversationId':conversation_id,'deviceId':context['deviceId'],'pairingGeneration':context['pairingGeneration'],'grantRevision':context['grantRevision']}.items()): raise GatewayError('AUTHENTICATION_FAILED')
+        self._refresh_host_state(conversation_id,media_id)
         with self.store.transaction():
             saved=self._get(key)
             if not saved or _now(saved['expiresAt'])<=_now(now) or any(saved[k]!=v for k,v in {'attachmentId':media_id,'conversationId':conversation_id,'deviceId':context['deviceId'],'pairingGeneration':context['pairingGeneration'],'grantRevision':context['grantRevision']}.items()): raise GatewayError('AUTHENTICATION_FAILED')

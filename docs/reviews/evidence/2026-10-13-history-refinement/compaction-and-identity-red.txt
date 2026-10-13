@@ -1,0 +1,19 @@
+FF                                                                       [100%]
+=================================== FAILURES ===================================
+______ test_native_display_metadata_does_not_change_real_compaction_tail _______
+tests/test_native_history_projection.py:44: in test_native_display_metadata_does_not_change_real_compaction_tail
+    assert len(database.get_messages("native_tail")) == 2, "展示信息不得进入模型 transcript 的物理尾部"
+E   AssertionError: 展示信息不得进入模型 transcript 的物理尾部
+E   assert 4 == 2
+E    +  where 4 = len([{'active': 1, 'api_content': None, 'codex_message_items': None, 'codex_reasoning_items': None, ...}, {'active': 1, 'a...tems': None, ...}, {'active': 1, 'api_content': None, 'codex_message_items': None, 'codex_reasoning_items': None, ...}])
+E    +    where [{'active': 1, 'api_content': None, 'codex_message_items': None, 'codex_reasoning_items': None, ...}, {'active': 1, 'a...tems': None, ...}, {'active': 1, 'api_content': None, 'codex_message_items': None, 'codex_reasoning_items': None, ...}] = get_messages('native_tail')
+E    +      where get_messages = <hermes_state.SessionDB object at 0x7fb9210ea990>.get_messages
+_________ test_native_equal_notice_never_claims_an_unrelated_old_reply _________
+tests/test_native_history_projection.py:73: in test_native_equal_notice_never_claims_an_unrelated_old_reply
+    old = next(row for row in rows if row["timestamp"] == 1000)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   StopIteration
+=========================== short test summary info ============================
+FAILED tests/test_native_history_projection.py::test_native_display_metadata_does_not_change_real_compaction_tail
+FAILED tests/test_native_history_projection.py::test_native_equal_notice_never_claims_an_unrelated_old_reply
+2 failed, 14 deselected in 0.37s

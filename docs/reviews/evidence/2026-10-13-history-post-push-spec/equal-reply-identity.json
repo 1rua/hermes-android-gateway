@@ -1,0 +1,21 @@
+{
+  "sourceRevision": "a4a6acc855e2499ef11857a0f9ca438e7f424f63",
+  "nativeSdkRevision": "75b083e9399115b12513385252811f09c3503c90",
+  "oldNativeRowMappedAsNewMessage": true,
+  "beforeNewNativeReply": [
+    {
+      "messageId": "msg_new_notice",
+      "timestamp": 2000
+    }
+  ],
+  "afterNewNativeReply": [
+    {
+      "messageId": "msg_host_06c91ab3c64a8f1586e9482342321534bf403d2c",
+      "timestamp": 2000
+    },
+    {
+      "messageId": "msg_new_notice",
+      "timestamp": 2000
+    }
+  ]
+}

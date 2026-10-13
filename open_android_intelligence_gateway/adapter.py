@@ -54,7 +54,9 @@ try:
         MessageType,
         SendResult,
     )
+    NATIVE_HERMES_AVAILABLE = True
 except ImportError:
+    NATIVE_HERMES_AVAILABLE = False
     # Standalone / test fallback
     class Platform:  # type: ignore
         def __init__(self, val: str):
@@ -800,7 +802,7 @@ class OpenAndroidPlatformAdapter(BasePlatformAdapter):
         port = getattr(getattr(core, "history_reader", None), "__self__", None)
         if port is not None:
             port.session_store = session_store
-        elif session_store is not None:
+        elif session_store is not None and NATIVE_HERMES_AVAILABLE:
             from .host_history import HermesHistoryPort
             core.history_reader = HermesHistoryPort(core, session_store).read
 
@@ -883,7 +885,7 @@ class OpenAndroidPlatformAdapter(BasePlatformAdapter):
             from .host_history import HermesHistoryPort
             session_store = getattr(self, "_session_store", None)
             # 宿主历史只在原生会话储存已接入时提供，独立传输仍由 Core 短期队列负责。
-            core.history_reader = HermesHistoryPort(core, session_store).read if session_store is not None else None
+            core.history_reader = HermesHistoryPort(core, session_store).read if session_store is not None and NATIVE_HERMES_AVAILABLE else None
         register_sink = getattr(core, "register_event_sink", None)
         if callable(register_sink):
             register_sink(self._event_sink)
@@ -1049,10 +1051,15 @@ class OpenAndroidPlatformAdapter(BasePlatformAdapter):
             account.conversations.record_assistant_message(chat_id,message_id,caption or "")
             payload=self._message_payload(chat_id,message_id,caption or "")
             payload["parts"].extend(HistoryMedia(account).reply_parts(message_id))
+            origin=resolve_origin(self.services.core,"",account_id,chat_id)
+            visible_payload = dict(payload)
+            if origin and origin.get("conversationId") == chat_id:
+                visible_payload["anchorClientMessageId"] = origin.get("clientMessageId")
             history_port = getattr(getattr(self.services.core, "history_reader", None), "__self__", None)
             if callable(getattr(history_port, "record_visible", None)):
-                history_port.record_visible(account, payload)
-            origin=resolve_origin(self.services.core,"",account_id,chat_id)
+                saved = history_port.record_visible(account, visible_payload)
+                if saved is not None:
+                    payload["revision"] = saved["revision"]
             account.events.append("conversation.message.completed",origin["messageId"] if origin else message_id,payload)
             return SendResult(success=True,message_id=message_id)
         except Exception:
@@ -1185,14 +1192,18 @@ class OpenAndroidPlatformAdapter(BasePlatformAdapter):
                     account.conversations.record_assistant_message(chat_id, message_id, text, occurred_at)
                 except Exception as rec_err:
                     logger.warning("[open_android] Failed to record completed message: %s", rec_err)
+            from .device_tools import resolve_origin
+            origin = resolve_origin(self.services.core,"",target_account,chat_id)
+            visible_payload = dict(payload)
+            if origin and origin.get("conversationId") == chat_id:
+                visible_payload["anchorClientMessageId"] = origin.get("clientMessageId")
             history_port = getattr(getattr(self.services.core, "history_reader", None), "__self__", None)
             if callable(getattr(history_port, "record_visible", None)):
-                saved = history_port.record_visible(account, payload,
+                saved = history_port.record_visible(account, visible_payload,
                     "CONFIRMED" if event_type == "conversation.message.completed" else "STREAMING")
                 if saved is not None:
                     payload["timestamp"] = saved["timestamp"]
-            from .device_tools import resolve_origin
-            origin = resolve_origin(self.services.core,"",target_account,chat_id)
+                    payload["revision"] = saved["revision"]
             correlation_id = origin["messageId"] if origin and origin.get("conversationId") == chat_id else message_id
             account.events.append(event_type, correlation_id, payload, occurred_at)
         finally:

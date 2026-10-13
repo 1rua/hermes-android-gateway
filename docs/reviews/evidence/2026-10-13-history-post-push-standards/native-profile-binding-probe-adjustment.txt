@@ -1,0 +1,6 @@
+[open_android] Conversation conv_308c5896-e846-4e77-9de0-34861bffc40b is bound to Agent session native_profile_parent but the host reported native_profile_child
+Traceback (most recent call last):
+  File "/mnt/data/projects/open-android-intelligence/tmp/hermes-history-worktree-20261012/docs/reviews/evidence/2026-10-13-history-post-push-standards/native-profile-cleanup-probe.py", line 45, in <module>
+    assert account.agent_sessions.attach(conversation, "native_profile_child", key)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError

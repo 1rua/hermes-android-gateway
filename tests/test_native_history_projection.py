@@ -18,6 +18,213 @@ from open_android_intelligence_gateway.history_media import HistoryMedia
 from test_support import make_secret_store
 
 
+def test_native_display_metadata_does_not_change_real_compaction_tail(tmp_path):
+    SessionDB = pytest.importorskip("hermes_state").SessionDB
+    database = SessionDB(tmp_path / "native.db")
+    core = create_gateway_core(tmp_path / "gateway", secret_store=make_secret_store())
+    port = HermesHistoryPort(core, SimpleNamespace(_db=database))
+    core.history_reader = port.read
+    account = core.open_gateway_account("acct_tail")
+    try:
+        conversation = account.conversations.create("cc_tail", "合成压缩尾部", "cor_tail")["conversationId"]
+        database.create_session("native_tail", "open_android")
+        account.agent_sessions.record(conversation, "inbound-message")
+        assert account.agent_sessions.attach(conversation, "native_tail")
+        accepted = account.conversations.accept_message(conversation, "cm_tail", "原始合成提问", [],
+            "dev_tail", "req_tail", "cor_tail")
+        dispatch = account.conversations.claim_dispatch("cm_tail")
+        port.capture_submission(account, dispatch)
+        database.append_message("native_tail", "user", "模型加工后的合成提问", platform_message_id="cm_tail", timestamp=1)
+        database.append_message("native_tail", "assistant", "合成最终回复", timestamp=2)
+        port.record_visible(account, {"messageId":"msg_tail_final", "conversationId":conversation,
+            "sender":"assistant", "text":"合成最终回复", "parts":[{"type":"text", "text":"合成最终回复"}],
+            "timestamp":2000, "anchorClientMessageId":"cm_tail"})
+        account.conversations.update_dispatch_status(accepted["messageId"], "delivered", None, "cor_tail", claim_token=dispatch["claimToken"])
+        before = account.conversations.list_messages(conversation)["messages"]
+        assert len(database.get_messages("native_tail")) == 2, "展示信息不得进入模型 transcript 的物理尾部"
+        tail = [{key:row[key] for key in ("role","content","timestamp","platform_message_id") if row.get(key) is not None}
+                for row in database.get_messages("native_tail")]
+        database.archive_and_compact("native_tail", [{"role":"user", "content":"内部压缩摘要", "_compressed_summary":True}, *tail], tail_count=2)
+        after = account.conversations.list_messages(conversation)["messages"]
+        assert {row["messageId"]:row["parts"] for row in after} == {row["messageId"]:row["parts"] for row in before}
+        assert all(row["state"] != "DELETED" for row in after)
+        assert next(row for row in after if row["messageId"] == accepted["messageId"])["text"] == "原始合成提问"
+    finally:
+        account.close()
+        database.close()
+
+
+def test_native_legacy_display_rows_migrate_once_without_changing_model_rows(tmp_path):
+    SessionDB = pytest.importorskip("hermes_state").SessionDB
+    from open_android_intelligence_gateway.host_history import PRESENTATION_KIND, PRESENTATION_KEY
+    database = SessionDB(tmp_path / "native.db")
+    core = create_gateway_core(tmp_path / "gateway", secret_store=make_secret_store())
+    port = HermesHistoryPort(core, SimpleNamespace(_db=database))
+    core.history_reader = port.read
+    account = core.open_gateway_account("acct_migrate")
+    try:
+        conversation = account.conversations.create("cc_migrate", "合成展示迁移", "cor_migrate")["conversationId"]
+        database.create_session("native_migrate", "open_android")
+        account.agent_sessions.record(conversation, "inbound-message")
+        assert account.agent_sessions.attach(conversation, "native_migrate")
+        database.append_message("native_migrate", "assistant", "模型原始回复", timestamp=2)
+        model = database.get_messages("native_migrate")
+        snapshot = {"version":1, "storageOwner":port.storage_owner, "accountId":"acct_migrate",
+            "conversationId":conversation, "messageId":"msg_migrate", "sender":"assistant", "clientMessageId":None,
+            "text":"已发布的独立工具提示", "parts":[{"type":"text", "text":"已发布的独立工具提示"}],
+            "timestamp":1000, "state":"CONFIRMED", "revision":3}
+        database.append_message("native_migrate", "session_meta", "legacy_marker", display_kind=PRESENTATION_KIND,
+            display_metadata={PRESENTATION_KEY:snapshot}, timestamp=1)
+        first = account.conversations.list_messages(conversation)["messages"]
+        shown = next(row for row in first if row["messageId"] == "msg_migrate")
+        assert shown["text"] == "已发布的独立工具提示" and shown["timestamp"] == 1000 and shown["contentRevision"] == 3
+        assert database.get_messages("native_migrate") == model
+        second = account.conversations.list_messages(conversation)["messages"]
+        assert second == first
+        assert len(database.list_meta_prefix("oai_gateway_presentation_v2:")) == 1
+    finally:
+        account.close()
+        database.close()
+
+
+def test_native_equal_notice_never_claims_an_unrelated_old_reply(tmp_path):
+    SessionDB = pytest.importorskip("hermes_state").SessionDB
+    database = SessionDB(tmp_path / "native.db")
+    core = create_gateway_core(tmp_path / "gateway", secret_store=make_secret_store())
+    port = HermesHistoryPort(core, SimpleNamespace(_db=database))
+    core.history_reader = port.read
+    account = core.open_gateway_account("acct_equal")
+    try:
+        conversation = account.conversations.create("cc_equal", "合成同文通知", "cor_equal")["conversationId"]
+        database.create_session("native_equal", "open_android")
+        account.agent_sessions.record(conversation, "inbound-message")
+        assert account.agent_sessions.attach(conversation, "native_equal")
+        database.append_message("native_equal", "assistant", "相同合成回答", timestamp=1)
+        port.record_visible(account, {"messageId":"msg_new_notice", "conversationId":conversation,
+            "sender":"assistant", "text":"相同合成回答", "parts":[{"type":"text", "text":"相同合成回答"}], "timestamp":2000}, "STREAMING")
+        rows = account.conversations.list_messages(conversation)["messages"]
+        old = next(row for row in rows if row["timestamp"] == 1000)
+        assert old["messageId"] != "msg_new_notice"
+        assert next(row for row in rows if row["messageId"] == "msg_new_notice")["timestamp"] == 2000
+    finally:
+        account.close()
+        database.close()
+
+
+def test_native_profile_rotation_cleans_the_owning_metadata_database(tmp_path, monkeypatch):
+    pytest.importorskip("hermes_state")
+    from gateway.config import GatewayConfig
+    from gateway.session import SessionEntry, SessionStore
+    home = tmp_path / "home"
+    monkeypatch.setenv("HERMES_HOME", str(home))
+    monkeypatch.setenv("HERMES_TEST_ISOLATION", str(home))
+    store = SessionStore(home / "sessions", GatewayConfig(multiplex_profiles=True))
+    profile = home / "profiles" / "projection"
+    profile.mkdir(parents=True)
+    store._profile_home_cache["projection"] = profile
+    key = "agent:projection:open_android:dm:projection-chat"
+    now = datetime.now(timezone.utc)
+    store._entries[key] = SessionEntry(session_key=key, session_id="native_parent", created_at=now, updated_at=now)
+    database = store._db_for_session_id("native_parent")
+    core = create_gateway_core(tmp_path / "gateway", secret_store=make_secret_store())
+    port = HermesHistoryPort(core, store)
+    account = core.open_gateway_account("acct_profile")
+    try:
+        conversation = account.conversations.create("cc_profile", "合成所属数据库", "cor_profile")["conversationId"]
+        database.create_session("native_parent", "open_android", session_key=key)
+        account.agent_sessions.record(conversation, "inbound-message")
+        assert account.agent_sessions.attach(conversation, "native_parent", key)
+        port.record_visible(account, {"messageId":"msg_profile", "conversationId":conversation,
+            "sender":"assistant", "text":"合成原文", "parts":[{"type":"text", "text":"合成原文"}], "timestamp":1000})
+        database.end_session("native_parent", "compression")
+        database.create_session("native_child", "open_android", parent_session_id="native_parent", session_key=key)
+        store._publish_transcript_reroute("native_parent", "native_child")
+        assert store._db_for_session_id("native_parent") is not database
+        port.cleanup_account("acct_profile")
+        assert not any(json.loads(value).get("accountId") == "acct_profile"
+                       for _, value in database.list_meta_prefix("oai_gateway_presentation_v2:"))
+        assert database.get_session("native_child") is not None
+    finally:
+        account.close()
+        store.close_all_db_handles()
+
+
+def test_native_explicit_same_identity_edit_updates_original_once(tmp_path):
+    SessionDB = pytest.importorskip("hermes_state").SessionDB
+    database = SessionDB(tmp_path / "native.db")
+    core = create_gateway_core(tmp_path / "gateway", secret_store=make_secret_store())
+    port = HermesHistoryPort(core, SimpleNamespace(_db=database))
+    core.history_reader = port.read
+    account = core.open_gateway_account("acct_edit")
+    try:
+        conversation = account.conversations.create("cc_edit", "合成明确编辑", "cor_edit")["conversationId"]
+        database.create_session("native_edit", "open_android")
+        account.agent_sessions.record(conversation, "inbound-message")
+        assert account.agent_sessions.attach(conversation, "native_edit")
+        accepted = account.conversations.accept_message(conversation, "cm_edit", "原始合成提问", [],
+            "dev_edit", "req_edit", "cor_edit")
+        dispatch = account.conversations.claim_dispatch("cm_edit")
+        port.capture_submission(account, dispatch)
+        database.append_message("native_edit", "user", "模型加工后的原始提问", platform_message_id="cm_edit", timestamp=1)
+        account.conversations.update_dispatch_status(accepted["messageId"], "delivered", None, "cor_edit", claim_token=dispatch["claimToken"])
+        before = account.conversations.list_messages(conversation)["messages"]
+        assert next(row for row in before if row["messageId"] == accepted["messageId"])["text"] == "原始合成提问"
+        kept = database.get_messages_as_conversation("native_edit")
+        kept[0]["content"] = "用户在宿主明确编辑的新提问"
+        database.replace_messages("native_edit", kept, archive_dropped=True)
+        after = account.conversations.list_messages(conversation)["messages"]
+        assert next(row for row in after if row["messageId"] == accepted["messageId"])["text"] == "用户在宿主明确编辑的新提问"
+        count = len([event for event in account.events.read_after(None) if event["eventType"] == "conversation.message.completed"])
+        account.conversations.list_messages(conversation)
+        assert len([event for event in account.events.read_after(None) if event["eventType"] == "conversation.message.completed"]) == count
+    finally:
+        account.close()
+        database.close()
+
+
+@pytest.mark.parametrize("entry", ["metadata", "grant", "content"])
+def test_native_asset_withdrawal_is_checked_at_each_entry_before_timeline(tmp_path, monkeypatch, entry):
+    SessionDB = pytest.importorskip("hermes_state").SessionDB
+    from open_android_intelligence_gateway.core import GatewayError
+    home = tmp_path / "home"
+    monkeypatch.setenv("HERMES_HOME", str(home))
+    monkeypatch.setenv("HERMES_TEST_ISOLATION", str(home))
+    output = home / "outputs" / "original.txt"
+    output.parent.mkdir(parents=True)
+    output.write_bytes(b"synthetic original")
+    database = SessionDB(tmp_path / "native.db")
+    core = create_gateway_core(tmp_path / "gateway", secret_store=make_secret_store())
+    port = HermesHistoryPort(core, SimpleNamespace(_db=database))
+    core.history_reader = port.read
+    account = core.open_gateway_account("acct_asset")
+    context = {"deviceId":"dev_asset", "pairingGeneration":1, "grantRevision":1}
+    try:
+        conversation = account.conversations.create("cc_asset", "合成原件撤回", "cor_asset")["conversationId"]
+        database.create_session("native_asset", "open_android")
+        account.agent_sessions.record(conversation, "inbound-message")
+        assert account.agent_sessions.attach(conversation, "native_asset")
+        database.append_message("native_asset", "assistant", "合成原件说明", platform_message_id="msg_asset", timestamp=1)
+        account.conversations.record_assistant_message(conversation, "msg_asset", "合成原件说明")
+        media = HistoryMedia(account)
+        part = media.register(conversation, "msg_asset", output)
+        port.record_visible(account, {"messageId":"msg_asset", "conversationId":conversation,
+            "sender":"assistant", "text":"合成原件说明", "parts":[{"type":"text", "text":"合成原件说明"}, part], "timestamp":1000})
+        token = media.grant(conversation, part["attachmentId"], context)["grantId"]
+        database.replace_messages("native_asset", [], archive_dropped=True)
+        if entry == "metadata":
+            assert not media.metadata(conversation, part["attachmentId"])["remoteAvailable"]
+        else:
+            with pytest.raises(GatewayError) as rejected:
+                if entry == "grant":
+                    media.grant(conversation, part["attachmentId"], context)
+                else:
+                    media.content(conversation, part["attachmentId"], token, context)
+            assert rejected.value.code == "ATTACHMENT_NOT_FOUND"
+    finally:
+        account.close()
+        database.close()
+
+
 def test_native_model_image_enrichment_does_not_replace_original_user_text(tmp_path):
     SessionDB = pytest.importorskip("hermes_state").SessionDB
     database = SessionDB(tmp_path / "native.db")
@@ -339,17 +546,18 @@ def test_presentation_updates_restart_without_changing_actual_native_model_repla
         database.create_session("native_replay", "open_android")
         account.agent_sessions.record(conversation, "inbound-message")
         assert account.agent_sessions.attach(conversation, "native_replay")
-        database.append_message("native_replay", "user", "模型已加工的正文", api_content="模型专用 API 原字节", timestamp=1)
+        database.append_message("native_replay", "user", "模型已加工的正文", api_content="模型专用 API 原字节", platform_message_id="cm_replay", timestamp=1)
         database.append_message("native_replay", "assistant", "合成最终回复", timestamp=2)
         before, _ = _build_gateway_agent_history(database.get_messages_as_conversation("native_replay"))
         payload = {"messageId":"msg_replay", "conversationId":conversation, "sender":"assistant",
-            "parts":[{"type":"text", "text":"合成流式片段"}], "text":"合成流式片段", "timestamp":1000}
+            "parts":[{"type":"text", "text":"合成流式片段"}], "text":"合成流式片段", "timestamp":1000,
+            "anchorClientMessageId":"cm_replay"}
         port.record_visible(account, payload, "STREAMING")
         port.record_visible(account, {**payload, "parts":[{"type":"text", "text":"合成最终回复"}],
             "text":"合成最终回复", "timestamp":9000})
         after, _ = _build_gateway_agent_history(database.get_messages_as_conversation("native_replay"))
         assert after == before
-        assert len([row for row in database.get_messages("native_replay") if row["role"] == "session_meta"]) == 1
+        assert not any(row["role"] == "session_meta" for row in database.get_messages("native_replay"))
         assert next(row for row in database.get_messages("native_replay") if row["role"] == "user")["api_content"] == "模型专用 API 原字节"
     finally:
         account.close()
@@ -477,6 +685,9 @@ def test_native_rewind_deletes_display_and_prevents_history_media_download(tmp_p
         database.create_session("native_rewind", "open_android")
         account.agent_sessions.record(conversation, "inbound-message")
         assert account.agent_sessions.attach(conversation, "native_rewind")
+        # 展示信息不再是模型行，撤回回归必须包含实际被撤回的原生消息。
+        database.append_message("native_rewind", "assistant", "原附件说明", platform_message_id="msg_rewind", timestamp=1)
+        account.conversations.record_assistant_message(conversation, "msg_rewind", "原附件说明")
         part = HistoryMedia(account).register(conversation, "msg_rewind", output)
         port.record_visible(account, {"messageId":"msg_rewind", "conversationId":conversation,
             "sender":"assistant", "text":"原附件说明", "parts":[{"type":"text","text":"原附件说明"},part], "timestamp":1000})
@@ -537,7 +748,8 @@ def test_account_delete_retires_only_owned_presentation_and_media(tmp_path, monk
         assert [row for row in rows if row["role"] != "session_meta"] == model_before["acct_delete"]
         assert [row["id"] for row in rows if row["role"] == "session_meta"] == [foreign]
         assert [row for row in database.get_messages("acct_keep") if row["role"] != "session_meta"] == model_before["acct_keep"]
-        assert any(row["role"] == "session_meta" for row in database.get_messages("acct_keep"))
+        assert any(json.loads(value).get("accountId") == "acct_keep"
+                   for _, value in database.list_meta_prefix("oai_gateway_presentation_v2:"))
         assert not originals["acct_delete"].exists() and originals["acct_keep"].is_file()
     finally:
         database.close()

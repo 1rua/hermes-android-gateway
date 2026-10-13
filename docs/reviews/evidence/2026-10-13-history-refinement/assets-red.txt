@@ -1,0 +1,19 @@
+FFF                                                                      [100%]
+=================================== FAILURES ===================================
+_ test_native_asset_withdrawal_is_checked_at_each_entry_before_timeline[metadata] _
+tests/test_native_history_projection.py:182: in test_native_asset_withdrawal_is_checked_at_each_entry_before_timeline
+    assert not media.metadata(conversation, part["attachmentId"])["remoteAvailable"]
+E   assert not True
+_ test_native_asset_withdrawal_is_checked_at_each_entry_before_timeline[grant] _
+tests/test_native_history_projection.py:184: in test_native_asset_withdrawal_is_checked_at_each_entry_before_timeline
+    with pytest.raises(GatewayError) as rejected:
+E   Failed: DID NOT RAISE <class 'open_android_intelligence_gateway.core.GatewayError'>
+_ test_native_asset_withdrawal_is_checked_at_each_entry_before_timeline[content] _
+tests/test_native_history_projection.py:184: in test_native_asset_withdrawal_is_checked_at_each_entry_before_timeline
+    with pytest.raises(GatewayError) as rejected:
+E   Failed: DID NOT RAISE <class 'open_android_intelligence_gateway.core.GatewayError'>
+=========================== short test summary info ============================
+FAILED tests/test_native_history_projection.py::test_native_asset_withdrawal_is_checked_at_each_entry_before_timeline[metadata]
+FAILED tests/test_native_history_projection.py::test_native_asset_withdrawal_is_checked_at_each_entry_before_timeline[grant]
+FAILED tests/test_native_history_projection.py::test_native_asset_withdrawal_is_checked_at_each_entry_before_timeline[content]
+3 failed, 18 deselected in 0.37s

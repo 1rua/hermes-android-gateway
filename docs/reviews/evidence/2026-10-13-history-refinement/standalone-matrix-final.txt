@@ -1,0 +1,46 @@
+..................................................................F....F [ 21%]
+........................................................................ [ 42%]
+........................................................................ [ 63%]
+........................................................................ [ 84%]
+.....................................................                    [100%]
+=================================== FAILURES ===================================
+________ test_opening_a_conversation_over_http_binds_its_agent_session _________
+tests/test_agent_session_binding.py:351: in test_opening_a_conversation_over_http_binds_its_agent_session
+    asyncio.run(scenario())
+/home/djbd/.local/share/uv/python/cpython-3.11.15-linux-x86_64-gnu/lib/python3.11/asyncio/runners.py:190: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/home/djbd/.local/share/uv/python/cpython-3.11.15-linux-x86_64-gnu/lib/python3.11/asyncio/runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/home/djbd/.local/share/uv/python/cpython-3.11.15-linux-x86_64-gnu/lib/python3.11/asyncio/base_events.py:654: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+tests/test_agent_session_binding.py:341: in scenario
+    assert response.status == 200
+E   AssertionError: assert 400 == 200
+E    +  where 400 = <ClientResponse(http://127.0.0.1:8045/open-android-intelligence/v2/conversations/conv_b4900429-f7d2-4e00-b086-1b2bf4b3...set=utf-8', 'Content-Length': '201', 'Date': 'Tue, 13 Oct 2026 08:11:18 GMT', 'Server': 'Python/3.11 aiohttp/3.14.5')>\n.status
+_ test_native_history_fixture_preserves_original_text_tools_and_owned_image_over_http _
+tests/test_android_echo_fixture.py:219: in test_native_history_fixture_preserves_original_text_tools_and_owned_image_over_http
+    asyncio.run(scenario())
+/home/djbd/.local/share/uv/python/cpython-3.11.15-linux-x86_64-gnu/lib/python3.11/asyncio/runners.py:190: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/home/djbd/.local/share/uv/python/cpython-3.11.15-linux-x86_64-gnu/lib/python3.11/asyncio/runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/home/djbd/.local/share/uv/python/cpython-3.11.15-linux-x86_64-gnu/lib/python3.11/asyncio/base_events.py:654: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+tests/test_android_echo_fixture.py:197: in scenario
+    grant = await _request(client, base_url, bundle, key, "POST", media_target + "/cache-grant", {}, "req_history_grant")
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_batch_http_dispatch.py:93: in _request
+    assert response.status == 200, result
+E   AssertionError: {'correlationId': 'req_history_grant', 'error': {'code': 'INTERNAL_ERROR', 'details': {}, 'message': 'INTERNAL_ERROR', 'retryAfterSeconds': None, ...}, 'protocol': '2.1', 'requestId': 'req_history_grant'}
+E   assert 400 == 200
+E    +  where 400 = <ClientResponse(http://127.0.0.1:39509/open-android-intelligence/v2/conversations/conv_b7d59710-3bd6-436c-a237-9d90638...set=utf-8', 'Content-Length': '219', 'Date': 'Tue, 13 Oct 2026 08:11:25 GMT', 'Server': 'Python/3.11 aiohttp/3.14.5')>\n.status
+=========================== short test summary info ============================
+FAILED tests/test_agent_session_binding.py::test_opening_a_conversation_over_http_binds_its_agent_session
+FAILED tests/test_android_echo_fixture.py::test_native_history_fixture_preserves_original_text_tools_and_owned_image_over_http
+2 failed, 339 passed in 68.35s (0:01:08)

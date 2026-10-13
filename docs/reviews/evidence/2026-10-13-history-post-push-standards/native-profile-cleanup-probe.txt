@@ -1,0 +1,19 @@
+{
+  "pluginCommit": "a4a6acc855e2499ef11857a0f9ca438e7f424f63",
+  "storeModule": "/home/djbd/.hermes/hermes-agent/gateway/session.py",
+  "parentResolvesToOwningDb": false,
+  "childResolvesToOwningDb": true,
+  "before": {
+    "native_profile_parent": 1,
+    "native_profile_child": 0
+  },
+  "after": {
+    "native_profile_parent": 1,
+    "native_profile_child": 0
+  }
+}
+Traceback (most recent call last):
+  File "/mnt/data/projects/open-android-intelligence/tmp/hermes-history-worktree-20261012/docs/reviews/evidence/2026-10-13-history-post-push-standards/native-profile-cleanup-probe.py", line 59, in <module>
+    assert sum(after.values()) == 0, "清理成功返回后仍在所属配置数据库保留当前账号的祖先展示正文"
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 清理成功返回后仍在所属配置数据库保留当前账号的祖先展示正文

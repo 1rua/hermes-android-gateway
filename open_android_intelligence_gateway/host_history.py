@@ -25,6 +25,7 @@ def visible_text(content: Any) -> str:
 
 PRESENTATION_KIND = "oai_gateway_presentation_v1"
 PRESENTATION_KEY = "oaiGatewayPresentation"
+PRESENTATION_NAMESPACE = "oai_gateway_presentation_v2:"
 
 
 def _message_parts(account: Any, row: Any, text: str) -> list[dict[str, Any]]:
@@ -45,7 +46,10 @@ def _deleted(row: Mapping[str, Any]) -> bool:
 def _wire(snapshot: Mapping[str, Any]) -> dict[str, Any]:
     names = {"messageId", "clientMessageId", "conversationId", "sender", "text", "parts",
              "timestamp", "state", "batchId"}
-    return {key: value for key, value in snapshot.items() if key in names}
+    result = {key: value for key, value in snapshot.items() if key in names}
+    if isinstance(snapshot.get("revision"), int):
+        result["contentRevision"] = snapshot["revision"]
+    return result
 
 
 def _tool_activity(row: Mapping[str, Any]) -> str:
@@ -70,10 +74,18 @@ class HermesHistoryPort:
         self.started_at = datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
         self._migration_lock = threading.RLock()
 
-    def _database(self, session_id: str) -> Any:
-        resolve = getattr(self.session_store, "_db_for_session_id", None)
-        database = resolve(session_id) if callable(resolve) else getattr(self.session_store, "_db", None)
-        if database is None or not callable(getattr(database, "get_messages", None)):
+    def _database(self, session_id: str, native_session_key: str | None = None) -> Any:
+        # 压缩会推进路由，旧会话 ID 不能再用于猜测所属 profile 的数据库。
+        resolve_key = getattr(self.session_store, "_db_for_key", None)
+        resolve_id = getattr(self.session_store, "_db_for_session_id", None)
+        if native_session_key and callable(resolve_key):
+            database = resolve_key(native_session_key)
+        else:
+            database = resolve_id(session_id) if callable(resolve_id) else getattr(self.session_store, "_db", None)
+        required = ("get_messages", "get_meta", "set_meta", "list_meta_prefix", "get_session")
+        if database is None or any(not callable(getattr(database, name, None)) for name in required):
+            raise RuntimeError("HOST_HISTORY_UNAVAILABLE")
+        if database.get_session(session_id) is None:
             raise RuntimeError("HOST_HISTORY_UNAVAILABLE")
         return database
 
@@ -86,7 +98,7 @@ class HermesHistoryPort:
         return chain(ancestors[0]) if ancestors and callable(chain) else (ancestors or [session_id])
 
     def _history_rows(self, database: Any, session_id: str) -> list[dict[str, Any]]:
-        rows = [row for owner in self._session_chain(database, session_id)
+        rows = [{**row, "session_id":owner} for owner in self._session_chain(database, session_id)
                 for row in database.get_messages(owner, include_inactive=True)]
         return sorted(rows, key=lambda row: row["id"])
 
@@ -95,8 +107,17 @@ class HermesHistoryPort:
         owner = row.get("session_id") or session_id
         return "history-native:" + hashlib.sha256(f"{owner}:{row['id']}".encode()).hexdigest()
 
-    def _presentations(self, account_id: str, conversation_id: str, rows: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    def _presentation_prefix(self, account_id: str, conversation_id: str | None = None) -> str:
+        prefix = PRESENTATION_NAMESPACE + self.storage_owner + ":" + hashlib.sha256(account_id.encode()).hexdigest() + ":"
+        return prefix if conversation_id is None else prefix + hashlib.sha256(conversation_id.encode()).hexdigest() + ":"
+
+    def _presentation_key(self, account_id: str, conversation_id: str, message_id: str) -> str:
+        return self._presentation_prefix(account_id, conversation_id) + hashlib.sha256(message_id.encode()).hexdigest()
+
+    def _presentations(self, database: Any, account_id: str, conversation_id: str, rows: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
         result = {}
+        # 兼容尚未部署的早期展示行，先在同一宿主事务迁移成功，再清除旧行。
+        legacy = []
         for row in rows:
             if row.get("role") != "session_meta" or row.get("display_kind") != PRESENTATION_KIND:
                 continue
@@ -108,38 +129,57 @@ class HermesHistoryPort:
                     or not isinstance(snapshot.get("messageId"), str) or snapshot.get("sender") not in {"user", "assistant"}
                     or not isinstance(snapshot.get("text"), str) or not isinstance(snapshot.get("parts"), list)):
                 continue
-            snapshot = dict(snapshot)
-            if _deleted(row):
-                snapshot.update(state="DELETED", text="", parts=[])
-            existing = result.get(snapshot["messageId"])
-            if existing is None or snapshot.get("revision", 0) >= existing.get("revision", 0):
-                result[snapshot["messageId"]] = snapshot
+            legacy.append((row, dict(snapshot)))
+        if legacy:
+            write = getattr(database, "_execute_write", None)
+            if not callable(write):
+                raise RuntimeError("HOST_HISTORY_UNAVAILABLE")
+            def migrate(conn):
+                cursor = conn.cursor()
+                for row, snapshot in legacy:
+                    key = self._presentation_key(account_id, conversation_id, snapshot["messageId"])
+                    previous = conn.execute("SELECT value FROM state_meta WHERE key=?", (key,)).fetchone()
+                    saved = json.loads(previous[0]) if previous else None
+                    if saved is None or saved.get("revision", 0) < snapshot.get("revision", 0):
+                        database.set_meta(key, json.dumps({**snapshot, "version":2}, separators=(",", ":")), cursor=cursor)
+                    conn.execute("DELETE FROM messages WHERE id=? AND role='session_meta' AND display_kind=?",
+                                 (row["id"], PRESENTATION_KIND))
+                for session in {row["session_id"] for row, _ in legacy}:
+                    count, calls = database._active_transcript_counts(conn, session)
+                    conn.execute("UPDATE sessions SET message_count=?,tool_call_count=? WHERE id=?", (count, calls, session))
+            write(migrate)
+        for _, value in database.list_meta_prefix(self._presentation_prefix(account_id, conversation_id)):
+            snapshot = json.loads(value)
+            if (snapshot.get("version") != 2 or snapshot.get("storageOwner") != self.storage_owner
+                    or snapshot.get("accountId") != account_id or snapshot.get("conversationId") != conversation_id):
+                continue
+            result[snapshot["messageId"]] = snapshot
         return result
 
     def _save(self, account: Any, database: Any, session_id: str, snapshot: dict[str, Any]) -> dict[str, Any]:
         from .core import _jcs
-        marker = "oai_display_" + hashlib.sha256(
-            _jcs([self.storage_owner, account.account_id, snapshot["conversationId"], snapshot["messageId"]]).encode()).hexdigest()
         key = "history-presentation:" + snapshot["conversationId"] + ":" + snapshot["messageId"]
         saved = account.store.database.execute("SELECT value FROM account_metadata WHERE key=?", (key,)).fetchone()
         index = json.loads(saved[0]) if saved else {}
+        metadata_key = self._presentation_key(account.account_id, snapshot["conversationId"], snapshot["messageId"])
+        native_value = database.get_meta(metadata_key)
+        native = json.loads(native_value) if native_value else {}
+        # 原生写入成功、短期索引尚未提交时，重试仍保持原始时间与递增版本。
+        if native and (native.get("accountId") != account.account_id or native.get("storageOwner") != self.storage_owner):
+            raise RuntimeError("HOST_HISTORY_BINDING_CONFLICT")
+        if native:
+            snapshot["timestamp"] = native["timestamp"]
         if index:
             snapshot["timestamp"] = index["timestamp"]
         fingerprint = hashlib.sha256(_jcs({**snapshot, "storageOwner": self.storage_owner}).encode()).hexdigest()
-        if index.get("fingerprint") == fingerprint and index.get("sessionId") == session_id:
+        if (index.get("fingerprint") == fingerprint and index.get("sessionId") == session_id
+                and native.get("revision") == index.get("revision")):
             return {**snapshot, "revision": index["revision"]}
-        revision = int(index.get("revision", 0)) + 1
-        stored = {**snapshot, "version": 1, "accountId": account.account_id,
+        revision = max(int(index.get("revision", 0)), int(native.get("revision", 0))) + 1
+        stored = {**snapshot, "version": 2, "accountId": account.account_id,
                   "storageOwner": self.storage_owner, "revision": revision}
-        update = getattr(database, "set_latest_matching_message_display_kind", None)
-        updated = bool(index.get("sessionId") == session_id and callable(update) and update(
-            session_id, role="session_meta", content=marker, display_kind=PRESENTATION_KIND,
-            display_metadata={PRESENTATION_KEY: stored},
-        ))
-        if not updated:
-            database.append_message(session_id, "session_meta", marker,
-                platform_message_id=marker, timestamp=snapshot["timestamp"] / 1000,
-                display_kind=PRESENTATION_KIND, display_metadata={PRESENTATION_KEY: stored})
+        # 宿主原生 KV 与模型 transcript 分开，不能改变压缩尾部和消息计数。
+        database.set_meta(metadata_key, json.dumps(stored, separators=(",", ":")))
         # Gateway 索引只含身份、修订和摘要；长期正文仅保存在原生 SessionDB。
         account.store.database.execute("INSERT OR REPLACE INTO account_metadata(key,value) VALUES (?,?)", (key,
             json.dumps({"sessionId": session_id, "revision": revision, "timestamp": stored["timestamp"],
@@ -151,11 +191,12 @@ class HermesHistoryPort:
         if not binding or not binding.get("agentSessionId"):
             raise RuntimeError("HOST_HISTORY_UNAVAILABLE")
         session_id = binding["agentSessionId"]
-        database = self._database(session_id)
+        database = self._database(session_id, binding.get("sessionKey"))
         session_id = self._session_chain(database, session_id)[-1]
         generation = account.conversations.workflow.for_message(dispatch["messageId"])
         message_ids = generation["messageIds"] if generation and generation.get("offsets") else [dispatch["messageId"]]
         with self._migration_lock:
+            self._presentations(database, account.account_id, dispatch["conversationId"], self._history_rows(database, session_id))
             for message_id in message_ids:
                 row = account.store.database.execute("SELECT * FROM messages WHERE message_id=? AND conversation_id=?",
                     (message_id, dispatch["conversationId"])).fetchone()
@@ -179,7 +220,7 @@ class HermesHistoryPort:
         if not binding or not binding.get("agentSessionId"):
             raise RuntimeError("HOST_HISTORY_UNAVAILABLE")
         session_id = binding["agentSessionId"]
-        database = self._database(session_id)
+        database = self._database(session_id, binding.get("sessionKey"))
         session_id = self._session_chain(database, session_id)[-1]
         snapshot = {"messageId": payload["messageId"], "clientMessageId": payload.get("clientMessageId"),
             "conversationId": payload["conversationId"], "sender": payload.get("sender", "assistant"),
@@ -190,19 +231,70 @@ class HermesHistoryPort:
         if state == "DELETED":
             snapshot.update(text="", parts=[])
         with self._migration_lock:
+            self._presentations(database, account.account_id, payload["conversationId"], self._history_rows(database, session_id))
             stored = self._save(account, database, session_id, snapshot)
-            if snapshot["sender"] == "assistant" and snapshot["text"]:
-                # 匹配本轮已落库的回答；进度通知没有模型记录时只用展示身份。
-                for row in reversed(self._history_rows(database, session_id)):
-                    if row.get("role") != "assistant" or row.get("tool_calls") or _deleted(row) or visible_text(row.get("content")) != snapshot["text"]:
-                        continue
-                    key = self._native_key(session_id, row)
-                    mapped = account.store.database.execute("SELECT value FROM account_metadata WHERE key=?", (key,)).fetchone()
-                    if mapped and mapped[0] != snapshot["messageId"]:
-                        continue
-                    account.store.database.execute("INSERT OR IGNORE INTO account_metadata(key,value) VALUES (?,?)", (key, snapshot["messageId"]))
-                    break
             return stored
+
+    def _bind_replies(self, account: Any, session_id: str, rows: list[dict[str, Any]], presentations: dict[str, dict[str, Any]]) -> None:
+        # 正文只能用于本轮、明确用户锚点内的唯一候选，不能认领上一轮的同文回答。
+        for snapshot in presentations.values():
+            anchor_id = snapshot.get("anchorClientMessageId")
+            if snapshot.get("sender") != "assistant" or snapshot.get("state") != "CONFIRMED" or not anchor_id:
+                continue
+            anchors = [row for row in rows if row.get("role") == "user" and not row.get("_compressed_summary")
+                       and row.get("platform_message_id") == anchor_id and not _deleted(row)]
+            if not anchors:
+                continue
+            anchor = max(anchors, key=lambda row: row["id"])
+            end = min((row["id"] for row in rows if row.get("role") == "user" and not row.get("_compressed_summary")
+                       and not _deleted(row) and row["id"] > anchor["id"]), default=float("inf"))
+            peers = [other for other in presentations.values() if other.get("sender") == "assistant"
+                     and other.get("state") == "CONFIRMED" and other.get("anchorClientMessageId") == anchor_id
+                     and other.get("text") == snapshot.get("text")]
+            if len(peers) != 1:
+                continue
+            candidates = [row for row in rows if row.get("role") == "assistant" and not row.get("tool_calls")
+                          and not _deleted(row) and anchor["id"] < row["id"] < end
+                          and visible_text(row.get("content")) == snapshot.get("text")]
+            if len(candidates) != 1:
+                continue
+            key = self._native_key(session_id, candidates[0])
+            account.store.database.execute("INSERT OR IGNORE INTO account_metadata(key,value) VALUES (?,?)", (key, snapshot["messageId"]))
+
+    def _host_user_edits(self, account: Any, database: Any, session_id: str, rows: list[dict[str, Any]], presentations: dict[str, dict[str, Any]]) -> None:
+        for message_id, snapshot in list(presentations.items()):
+            if snapshot.get("sender") != "user":
+                continue
+            anchor = snapshot.get("anchorClientMessageId") or snapshot.get("clientMessageId")
+            related = [row for row in rows if row.get("role") == "user" and row.get("platform_message_id") == anchor
+                       and not row.get("_compressed_summary")]
+            active = [row for row in related if row.get("active", 1)]
+            archived = [row for row in related if _deleted(row)]
+            if not active or not archived:
+                continue
+            current = max(active, key=lambda row: row["id"])
+            previous = max(archived, key=lambda row: row["id"])
+            proof = self._native_key(session_id, current)
+            # 普通重写没有软归档，压缩归档为 compacted；仅认明确同身份替换。
+            if (current["id"] <= previous["id"] or visible_text(current.get("content")) == visible_text(previous.get("content"))
+                    or snapshot.get("nativeEditKey") == proof):
+                continue
+            if snapshot.get("batchId"):
+                # 合并输入的编辑不能猜测如何拆分成原批次成员。
+                continue
+            text = visible_text(current.get("content"))
+            parts = [{"type":"text", "text":text}] if text else []
+            content = current.get("content")
+            if isinstance(content, list) and any(isinstance(part, Mapping) and part.get("type") != "text" for part in content):
+                parts.extend(part for part in snapshot["parts"] if part.get("type") != "text")
+            stored = self._save(account, database, session_id, {**snapshot, "text":text, "parts":parts,
+                "nativeEditKey":proof, "state":"CONFIRMED"})
+            presentations[message_id] = stored
+            # 沿用已分派的正文 upsert 事件；附件变化由带单条修订的历史响应体现。
+            if all(part.get("type") == "text" for part in stored["parts"]):
+                payload = {name:stored[name] for name in ("conversationId","messageId","sender","parts","text","timestamp")}
+                payload["revision"] = stored["revision"]
+                account.events.append("conversation.message.completed", message_id, payload)
 
     def read(self, account_id: str, conversation_id: str) -> list[dict[str, Any]]:
         account = self.core.open_gateway_account(account_id)
@@ -211,7 +303,7 @@ class HermesHistoryPort:
             if not binding or not binding.get("agentSessionId"):
                 return []
             session_id = binding["agentSessionId"]
-            database = self._database(session_id)
+            database = self._database(session_id, binding.get("sessionKey"))
             with self._migration_lock, account.store.transaction():
                 account.store.database.execute("INSERT OR IGNORE INTO account_metadata(key,value) VALUES ('native-history-migration-cutoff',?)", (self.started_at,))
                 cutoff = account.store.database.execute("SELECT value FROM account_metadata WHERE key='native-history-migration-cutoff'").fetchone()[0]
@@ -253,7 +345,9 @@ class HermesHistoryPort:
                         account.store.database.execute("UPDATE messages SET text='' WHERE message_id=?", (mid,))
                 rows = self._history_rows(database, session_id)
 
-            presentations = self._presentations(account_id, conversation_id, rows)
+            presentations = self._presentations(database, account_id, conversation_id, rows)
+            self._host_user_edits(account, database, session_id, rows, presentations)
+            self._bind_replies(account, session_id, rows, presentations)
             native_by_client = {str(row["platform_message_id"]): row for row in rows if row.get("role") == "user" and row.get("platform_message_id")}
             result = {}
             for row in rows:
@@ -277,6 +371,9 @@ class HermesHistoryPort:
                     digest = hashlib.sha256(text.encode()).hexdigest()
                     prefix = f"history-hash:{conversation_id}:"
                     candidate = account.store.database.execute("SELECT key FROM account_metadata WHERE key LIKE ? AND value=? ORDER BY key LIMIT 1", (prefix + "%", digest)).fetchone()
+                    if candidate and candidate[0][len(prefix):] in presentations:
+                        # 有展示记录却没有明确原生锚点时，不能靠旧摘要重新猜测身份。
+                        candidate = None
                     message_id = candidate[0][len(prefix):] if candidate else "msg_host_" + hashlib.sha256(f"{account_id}:{conversation_id}:{native_id}".encode()).hexdigest()[:40]
                     if candidate:
                         account.store.database.execute("DELETE FROM account_metadata WHERE key=?", (candidate[0],))
@@ -319,7 +416,9 @@ class HermesHistoryPort:
                 result[message_id] = item
             for item in result.values():
                 if item["state"] == "DELETED":
-                    HistoryMedia(account).mark_message_deleted(item["messageId"])
+                    # 快照撤回没有独立的恢复契约，不冒充可撤销的内容修订事件。
+                    item.pop("contentRevision", None)
+                    HistoryMedia(account).mark_message_deleted(item["messageId"],conversation_id)
             return [expanded for item in result.values() for expanded in
                     ([item] if item.get("batchId") else account.conversations.workflow.expand_history(item))]
         finally:
@@ -333,6 +432,7 @@ class HermesHistoryPort:
             conversations = account.store.database.execute("SELECT conversation_id FROM conversation_agent_sessions WHERE agent_session_id IS NOT NULL ORDER BY conversation_id LIMIT 10 OFFSET ?", (offset,)).fetchall()
         finally:
             account.close()
+
         for row in conversations:
             self.read(account_id, row[0])
         account = self.core.open_gateway_account(account_id)
@@ -347,11 +447,43 @@ class HermesHistoryPort:
         finally:
             account.close()
 
+    def media_message_deleted(self, account: Any, conversation_id: str, message_id: str) -> bool:
+        """原件路由已有账号事务，核对宿主事实时不得另开同账号写事务。"""
+        binding = account.agent_sessions.lookup(conversation_id)
+        if not binding or not binding.get("agentSessionId"):
+            return False
+        session_id = binding["agentSessionId"]
+        database = self._database(session_id, binding.get("sessionKey"))
+        rows = self._history_rows(database, session_id)
+        related = []
+        for row in rows:
+            if row.get("role") not in {"user", "assistant"} or row.get("_compressed_summary"):
+                continue
+            mapped = account.store.database.execute("SELECT value FROM account_metadata WHERE key=?", (self._native_key(session_id,row),)).fetchone()
+            protocol = account.store.database.execute("SELECT message_id FROM messages WHERE conversation_id=? AND client_message_id=? AND sender=?",
+                (conversation_id,row.get("platform_message_id"),row["role"])).fetchone()
+            if (mapped and mapped[0] == message_id) or (protocol and protocol[0] == message_id):
+                related.append(row)
+        if related:
+            return _deleted(max(related,key=lambda row:row["id"]))
+        value = database.get_meta(self._presentation_key(account.account_id,conversation_id,message_id))
+        snapshot = json.loads(value) if value else None
+        if snapshot and snapshot.get("state") == "DELETED":
+            return True
+        anchor = snapshot.get("anchorClientMessageId") if snapshot else None
+        anchors = [row for row in rows if row.get("role") == "user" and row.get("platform_message_id") == anchor
+                   and anchor and not row.get("_compressed_summary")]
+        return bool(anchors and _deleted(max(anchors,key=lambda row:row["id"])))
+
     def cleanup_account(self, account_id: str) -> None:
         account = self.core.open_gateway_account(account_id)
         try:
-            bindings = {row[0] for row in account.store.database.execute("SELECT agent_session_id FROM conversation_agent_sessions WHERE agent_session_id IS NOT NULL")}
-            sessions = {session_id for binding in bindings for session_id in self._session_chain(self._database(binding), binding)}
+            databases = {}
+            for binding in account.agent_sessions.list():
+                if not binding.get("agentSessionId"):
+                    continue
+                database = self._database(binding["agentSessionId"], binding.get("sessionKey"))
+                databases.setdefault(database, set()).update(self._session_chain(database, binding["agentSessionId"]))
         finally:
             account.close()
         # 先核对没有另一个账号绑定同一会话，避免异常旧绑定扩大删除范围。
@@ -360,27 +492,33 @@ class HermesHistoryPort:
                 continue
             other = self.core.open_gateway_account(other_id)
             try:
-                if any(row[0] in sessions for row in other.store.database.execute("SELECT agent_session_id FROM conversation_agent_sessions WHERE agent_session_id IS NOT NULL")):
-                    raise RuntimeError("HOST_HISTORY_BINDING_CONFLICT")
+                for binding in other.agent_sessions.list():
+                    if not binding.get("agentSessionId"):
+                        continue
+                    database = self._database(binding["agentSessionId"], binding.get("sessionKey"))
+                    if database in databases and set(self._session_chain(database, binding["agentSessionId"])) & databases[database]:
+                        raise RuntimeError("HOST_HISTORY_BINDING_CONFLICT")
             finally:
                 other.close()
         with self._migration_lock:
-            for session_id in sessions:
-                database = self._database(session_id)
+            for database, sessions in databases.items():
                 write = getattr(database, "_execute_write", None)
                 if not callable(write):
                     raise RuntimeError("HOST_HISTORY_UNAVAILABLE")
                 def clear_owned(conn):
                     # 使用宿主写事务，范围只包含本插件、此账号的展示侧记录。
-                    conn.execute("DELETE FROM messages WHERE session_id=? AND role='session_meta' "
-                        "AND display_kind=? AND json_valid(display_metadata) "
-                        "AND json_extract(display_metadata,'$.oaiGatewayPresentation.version')=1 "
-                        "AND json_extract(display_metadata,'$.oaiGatewayPresentation.accountId')=? "
-                        "AND json_extract(display_metadata,'$.oaiGatewayPresentation.storageOwner')=?",
-                        (session_id, PRESENTATION_KIND, account_id, self.storage_owner))
-                    count, calls = database._active_transcript_counts(conn, session_id)
-                    conn.execute("UPDATE sessions SET message_count=?,tool_call_count=? WHERE id=?",
-                        (count, calls, session_id))
+                    for key, _ in database.list_meta_prefix(self._presentation_prefix(account_id)):
+                        conn.execute("DELETE FROM state_meta WHERE key=?", (key,))
+                    for session_id in sessions:
+                        conn.execute("DELETE FROM messages WHERE session_id=? AND role='session_meta' "
+                            "AND display_kind=? AND json_valid(display_metadata) "
+                            "AND json_extract(display_metadata,'$.oaiGatewayPresentation.version')=1 "
+                            "AND json_extract(display_metadata,'$.oaiGatewayPresentation.accountId')=? "
+                            "AND json_extract(display_metadata,'$.oaiGatewayPresentation.storageOwner')=?",
+                            (session_id, PRESENTATION_KIND, account_id, self.storage_owner))
+                        count, calls = database._active_transcript_counts(conn, session_id)
+                        conn.execute("UPDATE sessions SET message_count=?,tool_call_count=? WHERE id=?",
+                            (count, calls, session_id))
                 write(clear_owned)
             HistoryMedia.retire_account_media(account_id, self.core.storage_root)
 

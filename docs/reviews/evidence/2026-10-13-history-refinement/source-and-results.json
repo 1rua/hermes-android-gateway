@@ -1,0 +1,26 @@
+{
+  "baseline": "a4a6acc855e2499ef11857a0f9ca438e7f424f63",
+  "sdkRevision": "75b083e9399115b12513385252811f09c3503c90",
+  "standalone": {
+    "passed": 341,
+    "failed": 0,
+    "skipped": 0
+  },
+  "nativeMatrix": {
+    "passed": 32,
+    "failed": 0,
+    "skipped": 0
+  },
+  "migration": {
+    "passed": 1,
+    "failed": 0,
+    "skipped": 0
+  },
+  "reviewMode": "用户最新要求由主Agent独立补修与复核，不再使用子Agent",
+  "sourceFiles": {
+    "open_android_intelligence_gateway/host_history.py": "b31c377f2bc7b330a512801660231c88decd0c75c04e91ad6e48e4280268b75f",
+    "open_android_intelligence_gateway/history_media.py": "447a67074f1a6853d733297e34eb83650404929ebb6daf1bbae3ea4f04a089fc",
+    "open_android_intelligence_gateway/adapter.py": "d20137476cad724aef23eaf1f67799676177b0d6094c26b410894b787e66cde7",
+    "tests/test_native_history_projection.py": "1153c63702a0e8b3dc1da59293d147da7da95201d6b128f901da3ff74e4407ec"
+  }
+}

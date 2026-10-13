@@ -1,0 +1,14 @@
+..................F..                                                    [100%]
+=================================== FAILURES ===================================
+____ test_native_rewind_deletes_display_and_prevents_history_media_download ____
+tests/test_native_history_projection.py:661: in test_native_rewind_deletes_display_and_prevents_history_media_download
+    assert rows[0]["messageId"] == "msg_rewind" and rows[0]["state"] == "DELETED"
+E   AssertionError: assert ('msg_rewind' == 'msg_rewind'
+E     
+E       msg_rewind and 'CONFIRMED' == 'DELETED'
+E     
+E     - DELETED
+E     + CONFIRMED)
+=========================== short test summary info ============================
+FAILED tests/test_native_history_projection.py::test_native_rewind_deletes_display_and_prevents_history_media_download
+1 failed, 20 passed in 6.83s

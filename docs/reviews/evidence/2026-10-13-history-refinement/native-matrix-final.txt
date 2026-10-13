@@ -1,0 +1,25 @@
+...........................F....                                         [100%]
+=================================== FAILURES ===================================
+_ test_native_history_fixture_preserves_original_text_tools_and_owned_image_over_http _
+tests/test_android_echo_fixture.py:219: in test_native_history_fixture_preserves_original_text_tools_and_owned_image_over_http
+    asyncio.run(scenario())
+/home/djbd/.local/share/uv/python/cpython-3.11.15-linux-x86_64-gnu/lib/python3.11/asyncio/runners.py:190: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/home/djbd/.local/share/uv/python/cpython-3.11.15-linux-x86_64-gnu/lib/python3.11/asyncio/runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/home/djbd/.local/share/uv/python/cpython-3.11.15-linux-x86_64-gnu/lib/python3.11/asyncio/base_events.py:654: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+tests/test_android_echo_fixture.py:197: in scenario
+    grant = await _request(client, base_url, bundle, key, "POST", media_target + "/cache-grant", {}, "req_history_grant")
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_batch_http_dispatch.py:93: in _request
+    assert response.status == 200, result
+E   AssertionError: {'correlationId': 'req_history_grant', 'error': {'code': 'INTERNAL_ERROR', 'details': {}, 'message': 'INTERNAL_ERROR', 'retryAfterSeconds': None, ...}, 'protocol': '2.1', 'requestId': 'req_history_grant'}
+E   assert 400 == 200
+E    +  where 400 = <ClientResponse(http://127.0.0.1:39179/open-android-intelligence/v2/conversations/conv_cc58f351-1ad5-4c13-af3b-19f7964...set=utf-8', 'Content-Length': '219', 'Date': 'Tue, 13 Oct 2026 08:10:30 GMT', 'Server': 'Python/3.11 aiohttp/3.14.5')>\n.status
+=========================== short test summary info ============================
+FAILED tests/test_android_echo_fixture.py::test_native_history_fixture_preserves_original_text_tools_and_owned_image_over_http
+1 failed, 31 passed in 21.02s

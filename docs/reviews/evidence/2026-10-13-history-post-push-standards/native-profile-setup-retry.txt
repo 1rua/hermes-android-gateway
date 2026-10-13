@@ -1,0 +1,6 @@
+[gateway] Warning: SQLite session store unavailable, falling back to JSONL: Named profile home does not exist: /tmp/oai-history-standards-profile-xpc0u4r9/hermes-home/profiles/standards. Create the profile explicitly before using it.
+Traceback (most recent call last):
+  File "/mnt/data/projects/open-android-intelligence/tmp/hermes-history-worktree-20261012/docs/reviews/evidence/2026-10-13-history-post-push-standards/native-profile-cleanup-probe.py", line 35, in <module>
+    database.create_session("native_profile_parent", "open_android", session_key=key)
+    ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'NoneType' object has no attribute 'create_session'

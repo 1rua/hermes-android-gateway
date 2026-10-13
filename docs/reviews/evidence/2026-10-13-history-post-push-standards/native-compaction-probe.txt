@@ -1,0 +1,119 @@
+{
+  "pluginCommit": "a4a6acc855e2499ef11857a0f9ca438e7f424f63",
+  "hostModule": "/home/djbd/.hermes/hermes-agent/hermes_state.py",
+  "before": [
+    {
+      "messageId": "msg_standards_final",
+      "clientMessageId": null,
+      "conversationId": "conv_40863f5f-1e65-4f9a-9e33-c4aa89707d7c",
+      "sender": "assistant",
+      "text": "合成最终回复",
+      "parts": [
+        {
+          "type": "text",
+          "text": "合成最终回复"
+        }
+      ],
+      "timestamp": 2000,
+      "state": "CONFIRMED"
+    },
+    {
+      "messageId": "msg_9d00c403-6d8d-4491-aae8-b8ead64348ab",
+      "clientMessageId": "cm_standards_probe",
+      "conversationId": "conv_40863f5f-1e65-4f9a-9e33-c4aa89707d7c",
+      "sender": "user",
+      "text": "合成原始提问",
+      "parts": [
+        {
+          "type": "text",
+          "text": "合成原始提问"
+        }
+      ],
+      "timestamp": 1791860133955,
+      "state": "CONFIRMED"
+    }
+  ],
+  "after": [
+    {
+      "messageId": "msg_standards_final",
+      "clientMessageId": null,
+      "conversationId": "conv_40863f5f-1e65-4f9a-9e33-c4aa89707d7c",
+      "sender": "assistant",
+      "text": "",
+      "parts": [],
+      "timestamp": 2000,
+      "state": "DELETED"
+    },
+    {
+      "messageId": "msg_9d00c403-6d8d-4491-aae8-b8ead64348ab",
+      "clientMessageId": "cm_standards_probe",
+      "conversationId": "conv_40863f5f-1e65-4f9a-9e33-c4aa89707d7c",
+      "sender": "user",
+      "text": "合成原始提问",
+      "parts": [
+        {
+          "type": "text",
+          "text": "合成原始提问"
+        }
+      ],
+      "timestamp": 1791860133955,
+      "state": "CONFIRMED"
+    }
+  ],
+  "nativeFlags": [
+    {
+      "id": 1,
+      "role": "session_meta",
+      "active": 0,
+      "compacted": 1,
+      "platform_message_id": "oai_display_916bcf1f0133c40bc978d0659f83d6a5917cf9d59616826c34ed3a3ad17ddeac"
+    },
+    {
+      "id": 2,
+      "role": "user",
+      "active": 0,
+      "compacted": 1,
+      "platform_message_id": "cm_standards_probe"
+    },
+    {
+      "id": 3,
+      "role": "assistant",
+      "active": 0,
+      "compacted": 0,
+      "platform_message_id": null
+    },
+    {
+      "id": 4,
+      "role": "session_meta",
+      "active": 0,
+      "compacted": 0,
+      "platform_message_id": "oai_display_3451fdbf26ec0f0937b9e53567b86ca3330452bf90d8b62e8131dc53a76eab96"
+    },
+    {
+      "id": 5,
+      "role": "user",
+      "active": 1,
+      "compacted": 0,
+      "platform_message_id": null
+    },
+    {
+      "id": 6,
+      "role": "user",
+      "active": 1,
+      "compacted": 0,
+      "platform_message_id": "cm_standards_probe"
+    },
+    {
+      "id": 7,
+      "role": "assistant",
+      "active": 1,
+      "compacted": 0,
+      "platform_message_id": null
+    }
+  ]
+}
+Traceback (most recent call last):
+  File "/mnt/data/projects/open-android-intelligence/tmp/hermes-history-worktree-20261012/docs/reviews/evidence/2026-10-13-history-post-push-standards/native-compaction-probe.py", line 54, in <module>
+    assert next(row for row in after if row["messageId"] == "msg_standards_final")["state"] != "DELETED", \
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 宿主压缩保留了回复，展示层却把它标记为删除

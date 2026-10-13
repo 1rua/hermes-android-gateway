@@ -1,0 +1,20 @@
+{
+  "sourceRevision": "a4a6acc855e2499ef11857a0f9ca438e7f424f63",
+  "nativeSdkRevision": "75b083e9399115b12513385252811f09c3503c90",
+  "nativeExplicitEditArchivedOldUser": true,
+  "nativeActiveUserIsEdited": true,
+  "beforeWire": [
+    {
+      "messageId": "msg_33547aed-78d9-4215-a9a9-f4511580c201",
+      "text": "原始合成提问",
+      "state": "CONFIRMED"
+    }
+  ],
+  "afterWire": [
+    {
+      "messageId": "msg_33547aed-78d9-4215-a9a9-f4511580c201",
+      "text": "原始合成提问",
+      "state": "CONFIRMED"
+    }
+  ]
+}
