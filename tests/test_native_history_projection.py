@@ -343,6 +343,7 @@ def test_native_history_keeps_the_attachment_identity_and_metadata_of_the_user_m
         expected_attachment = {
             "type": "attachment", "attachmentId": attachment_id,
             "filename": "synthetic.png", "mediaType": "image/png", "sizeBytes": len(body),
+            "sha256":"sha256:" + hashlib.sha256(body).hexdigest(),
         }
         before = account.conversations.list_messages(conversation)["messages"]
         assert expected_attachment in before[0]["parts"]
@@ -575,6 +576,19 @@ def test_large_uploaded_attachment_reaches_native_agent_and_retains_host_origina
             with original.open("rb") as stream:
                 assert hashlib.file_digest(stream, "sha256").hexdigest() == digest
             assert media.metadata(conversation, attachment_id)["status"] == "REMOTE_UNAVAILABLE"
+            assert media.metadata(conversation, attachment_id, format="stream-v1")["remoteAvailable"]
+            context = {"deviceId":"dev_projection", "pairingGeneration":1, "grantRevision":1}
+            grant = media.grant(conversation, attachment_id, context, format="stream-v1")
+            stream = media.content_stream(conversation, attachment_id, grant["grantId"], context)
+            streamed_digest, streamed_length = hashlib.sha256(), 0
+            try:
+                for chunk in stream:
+                    assert len(chunk) <= 64 * 1024
+                    streamed_digest.update(chunk)
+                    streamed_length += len(chunk)
+            finally:
+                stream.close()
+            assert streamed_length == len(body) and streamed_digest.hexdigest() == digest
         finally:
             reopened.close()
     finally:

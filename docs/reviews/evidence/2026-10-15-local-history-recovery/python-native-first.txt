@@ -1,0 +1,607 @@
+...........F..............F..FFF.F                                       [100%]
+=================================== FAILURES ===================================
+_ test_native_history_keeps_the_attachment_identity_and_metadata_of_the_user_message _
+
+tmp_path = PosixPath('/tmp/pytest-of-djbd/pytest-4/test_native_history_keeps_the_0')
+
+    def test_native_history_keeps_the_attachment_identity_and_metadata_of_the_user_message(tmp_path):
+        SessionDB = pytest.importorskip("hermes_state").SessionDB
+        database = SessionDB(tmp_path / "native.db")
+        core = create_gateway_core(tmp_path / "gateway", secret_store=make_secret_store())
+        account = core.open_gateway_account("acct_projection")
+        now = datetime.now(timezone.utc)
+        try:
+            conversation = account.conversations.create("cc_media_projection", "图片对话", "cor_create")["conversationId"]
+            body = b"synthetic image bytes"
+            attachment = account.attachments.create(
+                clientAttachmentId="ca_projection", filename="synthetic.png", mediaType="image/png",
+                sizeBytes=len(body), sha256=hashlib.sha256(body).hexdigest(), correlationId="cor_media", now=now,
+            )
+            attachment_id = attachment["attachmentId"]
+            account.attachments.upload_content(attachment_id, body, now=now)
+            account.attachments.commit(attachment_id, now=now)
+            accepted = account.conversations.accept_message(
+                conversation, "cm_media_projection", "请说明这张图片", [attachment_id],
+                "dev_projection", "req_media_projection", "cor_media_projection", now=now,
+            )
+            expected_attachment = {
+                "type": "attachment", "attachmentId": attachment_id,
+                "filename": "synthetic.png", "mediaType": "image/png", "sizeBytes": len(body),
+            }
+            before = account.conversations.list_messages(conversation)["messages"]
+            assert expected_attachment in before[0]["parts"]
+            database.create_session("native_projection", "open_android")
+            account.agent_sessions.record(conversation, "inbound-message", now=now)
+            assert account.agent_sessions.attach(conversation, "native_projection")
+            dispatch = account.conversations.claim_dispatch("cm_media_projection", now=now)
+            account.conversations.update_dispatch_status(
+                accepted["messageId"], "delivered", None, "cor_media_projection", now=now, claim_token=dispatch["claimToken"],
+            )
+            account.conversations.update_dispatch_status(accepted["messageId"], "completed", None, "cor_media_projection", now=now)
+            database.append_message(
+                "native_projection", "user", "请说明这张图片",
+                platform_message_id="cm_media_projection", timestamp=now.timestamp(),
+            )
+        finally:
+            account.close()
+        core.history_reader = HermesHistoryPort(core, SimpleNamespace(_db=database)).read
+        try:
+            reopened = core.open_gateway_account("acct_projection")
+            try:
+                after = reopened.conversations.list_messages(conversation)["messages"]
+                user = next(row for row in after if row["messageId"] == accepted["messageId"])
+                assert user["text"] == "请说明这张图片"
+>               assert expected_attachment in user["parts"]
+E               AssertionError: assert {'type': 'attachment', 'attachmentId': 'att_521b4382-7a65-4040-a842-b3da6538a9b1', 'filename': 'synthetic.png', 'mediaType': 'image/png', ...} in [{'type': 'text', 'text': '请说明这张图片'}, {'type': 'attachment', 'attachmentId': 'att_521b4382-7a65-4040-a842-b3da6538a9b1', 'filename': 'synthetic.png', 'mediaType': 'image/png', ...}]
+
+.worktrees/local-history-hermes/tests/test_native_history_projection.py:370: AssertionError
+_______ test_fixture_cli_starts_on_random_loopback_port_and_stops[True] ________
+
+tmp_path = PosixPath('/tmp/pytest-of-djbd/pytest-4/test_fixture_cli_starts_on_ran1')
+echo_agent = True
+
+    @pytest.mark.parametrize("echo_agent", [False, True])
+    def test_fixture_cli_starts_on_random_loopback_port_and_stops(tmp_path, echo_agent):
+        async def scenario():
+            with _fixture_process(tmp_path, echo_agent) as (process, log_path):
+                base_url = await _fixture_url(process, log_path)
+                async with ClientSession() as client:
+                    async with client.get(base_url + "/fixture-not-a-gateway-route") as response:
+                        assert response.status == 404
+            assert process.poll() is not None
+            if echo_agent:
+                assert not (tmp_path / "inherited-master-key").exists()
+                assert not (tmp_path / "inherited-hermes-home").exists()
+    
+>       asyncio.run(scenario())
+
+.worktrees/local-history-hermes/tests/test_android_echo_fixture.py:79: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+.toolchains/python-ci/cpython-3.11.17-linux-x86_64-gnu/lib/python3.11/asyncio/runners.py:190: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+.toolchains/python-ci/cpython-3.11.17-linux-x86_64-gnu/lib/python3.11/asyncio/runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.toolchains/python-ci/cpython-3.11.17-linux-x86_64-gnu/lib/python3.11/asyncio/base_events.py:654: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+.worktrees/local-history-hermes/tests/test_android_echo_fixture.py:70: in scenario
+    base_url = await _fixture_url(process, log_path)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+process = <Popen: returncode: 1 args: ['/mnt/data/projects/open-android-intelligence/....>
+log_path = PosixPath('/tmp/pytest-of-djbd/pytest-4/test_fixture_cli_starts_on_ran1/fixture-stderr.txt')
+
+    async def _fixture_url(process, log_path):
+        first_line = await asyncio.wait_for(asyncio.to_thread(process.stdout.readline), timeout=10)
+>       assert first_line.startswith("http://127.0.0.1:"), log_path.read_text()
+E       AssertionError: [open_android] 主密钥来源不可用：主密钥文件权限过于宽松（0o777）：/mnt/data/projects/open-android-intelligence/.worktrees/local-history-hermes/.native-validation-home/cache/scratch/oai-android-echo-2ruf8ra4/keys/gateway-master-key，必须是 0600。
+E         Traceback (most recent call last):
+E           File "/mnt/data/projects/open-android-intelligence/.worktrees/local-history-hermes/tests/android_gateway_fixture.py", line 387, in <module>
+E             main()
+E           File "/mnt/data/projects/open-android-intelligence/.worktrees/local-history-hermes/tests/android_gateway_fixture.py", line 341, in main
+E             asyncio.run(run_echo_agent(core, admin, exposure, args.port,
+E           File "/mnt/data/projects/open-android-intelligence/.toolchains/python-ci/cpython-3.11.17-linux-x86_64-gnu/lib/python3.11/asyncio/runners.py", line 190, in run
+E             return runner.run(main)
+E                    ^^^^^^^^^^^^^^^^
+E           File "/mnt/data/projects/open-android-intelligence/.toolchains/python-ci/cpython-3.11.17-linux-x86_64-gnu/lib/python3.11/asyncio/runners.py", line 118, in run
+E             return self._loop.run_until_complete(task)
+E                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           File "/mnt/data/projects/open-android-intelligence/.toolchains/python-ci/cpython-3.11.17-linux-x86_64-gnu/lib/python3.11/asyncio/base_events.py", line 654, in run_until_complete
+E             return future.result()
+E                    ^^^^^^^^^^^^^^^
+E           File "/mnt/data/projects/open-android-intelligence/.worktrees/local-history-hermes/tests/android_gateway_fixture.py", line 275, in run_echo_agent
+E             raise RuntimeError("隔离适配器未成功启动")
+E         RuntimeError: 隔离适配器未成功启动
+E         
+E       assert False
+E        +  where False = <built-in method startswith of str object at 0x559fdc633818>('http://127.0.0.1:')
+E        +    where <built-in method startswith of str object at 0x559fdc633818> = ''.startswith
+
+.worktrees/local-history-hermes/tests/test_android_echo_fixture.py:60: AssertionError
+_ test_native_history_fixture_preserves_original_text_tools_and_owned_image_over_http _
+
+tmp_path = PosixPath('/tmp/pytest-of-djbd/pytest-4/test_native_history_fixture_pr0')
+
+    def test_native_history_fixture_preserves_original_text_tools_and_owned_image_over_http(tmp_path):
+        async def scenario():
+            with _fixture_process(tmp_path, False, history_agent=True) as (process, log_path):
+                base_url = await _fixture_url(process, log_path)
+                image = base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=")
+                digest = hashlib.sha256(image).hexdigest()
+                key = Ed25519PrivateKey.generate()
+                async with ClientSession() as client:
+                    bundle = await _login(client, base_url, key)
+                    created = await _request(client, base_url, bundle, key, "POST", PREFIX + "/conversations",
+                        {"clientConversationId": "cc_fixture_history"}, "req_history_create")
+                    conversation_id = created["data"]["conversation"]["conversationId"]
+                    attachment = await _request(client, base_url, bundle, key, "POST", PREFIX + "/attachments", {
+                        "clientAttachmentId": "ca_fixture_history", "filename": "synthetic.png", "mediaType": "image/png",
+                        "sizeBytes": len(image), "sha256": digest,
+                    }, "req_history_upload_create")
+                    attachment_id = attachment["data"]["attachment"]["attachmentId"]
+                    upload_target = f"{PREFIX}/attachments/{attachment_id}/content"
+                    _, upload_headers = _signed_request(bundle, key, "PUT", upload_target, request_id="req_history_upload")
+                    preimage = "\n".join((
+                        "OPEN-ANDROID-INTELLIGENCE-REQUEST-V2", "PUT", upload_target, "alice",
+                        bundle["deviceId"], bundle["sessionId"], upload_headers["X-Open-Android-Intelligence-Request-Id"],
+                        upload_headers["X-Open-Android-Intelligence-Timestamp"], upload_headers["X-Open-Android-Intelligence-Nonce"], digest,
+                    )).encode("ascii")
+                    upload_headers["X-Open-Android-Intelligence-Signature"] = _b64url(key.sign(preimage))
+                    upload_headers.update({"Content-Type": "image/png", "Content-Length": str(len(image)),
+                        "Digest": "sha-256=" + base64.b64encode(hashlib.sha256(image).digest()).decode("ascii")})
+                    async with client.put(base_url + upload_target, headers=upload_headers, data=image) as response:
+                        assert response.status == 200, await response.json()
+                    await _request(client, base_url, bundle, key, "POST", f"{PREFIX}/attachments/{attachment_id}/commit", {}, "req_history_commit")
+    
+                    _, headers = _signed_request(bundle, key, "GET", PREFIX + "/events", request_id="req_history_stream")
+                    headers["Accept"] = "text/event-stream"
+                    async with client.get(base_url + PREFIX + "/events", headers=headers) as stream:
+                        assert stream.status == 200
+                        await _request(client, base_url, bundle, key, "GET", PREFIX + "/sync/snapshot", request_id="req_history_baseline")
+                        while True:
+                            event = await _next_event(stream)
+                            if event["event"] == "gateway.notice" and event["payload"]["noticeCode"] == "SYNC_BASELINE":
+                                break
+                        original = "请说明这张合成图片\n保留这个原始文本。"
+                        receipt = await _request(client, base_url, bundle, key, "POST", f"{PREFIX}/conversations/{conversation_id}/messages", {
+                            "clientMessageId": "cm_fixture_history", "text": original, "attachments": [{"attachmentId": attachment_id}],
+                        }, "req_history_message")
+                        published = []
+                        while True:
+                            event = await _next_event(stream)
+                            if event["event"] == "conversation.message.completed":
+                                published.append(event["payload"])
+                            if event["event"] == "conversation.message.status" and event["payload"]["clientMessageId"] == "cm_fixture_history" and event["payload"]["status"] in {"completed", "failed"}:
+                                assert event["payload"]["status"] == "completed"
+                                break
+                        assert [item["text"] for item in published] == ["正在查询合成测试图片信息", "这是一张合成测试图片，原始附件已经收到。"]
+    
+                    switched = await _request(client, base_url, bundle, key, "POST", PREFIX + "/conversations", {
+                        "clientConversationId": "cc_fixture_history_other",
+                    }, "req_history_other")
+                    other_id = switched["data"]["conversation"]["conversationId"]
+                    other = await _request(client, base_url, bundle, key, "GET", f"{PREFIX}/conversations/{other_id}/messages", request_id="req_history_other_read")
+                    assert other["data"]["messages"] == []
+                    for index in range(2):
+                        reopened = await _request(client, base_url, bundle, key, "GET", f"{PREFIX}/conversations/{conversation_id}/messages", request_id=f"req_history_read_{index}")
+                        rows = reopened["data"]["messages"]
+                        user = next(row for row in rows if row.get("clientMessageId") == "cm_fixture_history")
+                        assert user["messageId"] == receipt["data"]["message"]["messageId"]
+                        assert user["text"] == original
+                        assert user["parts"] == [{"type": "text", "text": original}, {
+                            "type": "attachment", "attachmentId": attachment_id,
+                            "filename": "synthetic.png", "mediaType": "image/png", "sizeBytes": len(image),
+                        }]
+                        for item in published:
+                            restored = next(row for row in rows if row["messageId"] == item["messageId"])
+                            assert restored["text"] == item["text"]
+                            assert restored["timestamp"] == item["timestamp"]
+                        assert all(row.get("text") or row.get("parts") for row in rows if row["sender"] == "assistant")
+    
+                    media_target = f"{PREFIX}/conversations/{conversation_id}/attachments/{attachment_id}"
+                    metadata = await _request(client, base_url, bundle, key, "GET", media_target + "/metadata", request_id="req_history_metadata")
+                    media = metadata["data"]["metadata"]
+                    assert media["attachmentId"] == attachment_id and media["conversationId"] == conversation_id
+                    assert media["sha256"] == "sha256:" + digest and media["remoteAvailable"] is True
+                    grant = await _request(client, base_url, bundle, key, "POST", media_target + "/cache-grant", {}, "req_history_grant")
+                    content_target = media_target + "/content?grantId=" + grant["data"]["grantId"]
+                    content = await _request(client, base_url, bundle, key, "GET", content_target, request_id="req_history_content")
+                    assert content["data"]["mediaType"] == "image/png"
+                    assert base64.b64decode(content["data"]["contentBase64"]) == image
+                    for request_id, target, expected_status, expected_code in (
+                        ("req_history_reuse", content_target, 401, "AUTHENTICATION_FAILED"),
+                        ("req_history_cross", f"{PREFIX}/conversations/{other_id}/attachments/{attachment_id}/metadata", 400, "ATTACHMENT_NOT_FOUND"),
+                    ):
+                        _, headers = _signed_request(bundle, key, "GET", target, request_id=request_id)
+                        async with client.get(base_url + target, headers=headers) as response:
+                            assert response.status == expected_status
+                            assert (await response.json())["error"]["code"] == expected_code
+                    diagnostic_rows = [json.loads(line) for line in log_path.read_text().splitlines() if line.startswith("{")]
+                    assert {"fixtureMode": "history-agent", "host": "native"} in diagnostic_rows
+                    persisted = next(row for row in diagnostic_rows if row.get("fixtureEvent") == "history-persisted")
+                    assert persisted["nativeSessionDb"] and persisted["modelInputPersisted"] and persisted["imageSha256"] == digest
+                    released = next(row for row in diagnostic_rows if row.get("fixtureEvent") == "history-input-released")
+                    assert released["released"] is True
+            assert not (tmp_path / "inherited-master-key").exists()
+            assert not (tmp_path / "inherited-hermes-home").exists()
+    
+>       asyncio.run(scenario())
+
+.worktrees/local-history-hermes/tests/test_android_echo_fixture.py:219: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+.toolchains/python-ci/cpython-3.11.17-linux-x86_64-gnu/lib/python3.11/asyncio/runners.py:190: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+.toolchains/python-ci/cpython-3.11.17-linux-x86_64-gnu/lib/python3.11/asyncio/runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.toolchains/python-ci/cpython-3.11.17-linux-x86_64-gnu/lib/python3.11/asyncio/base_events.py:654: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+.worktrees/local-history-hermes/tests/test_android_echo_fixture.py:119: in scenario
+    base_url = await _fixture_url(process, log_path)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+process = <Popen: returncode: 1 args: ['/mnt/data/projects/open-android-intelligence/....>
+log_path = PosixPath('/tmp/pytest-of-djbd/pytest-4/test_native_history_fixture_pr0/fixture-stderr.txt')
+
+    async def _fixture_url(process, log_path):
+        first_line = await asyncio.wait_for(asyncio.to_thread(process.stdout.readline), timeout=10)
+>       assert first_line.startswith("http://127.0.0.1:"), log_path.read_text()
+E       AssertionError: [open_android] 主密钥来源不可用：主密钥文件权限过于宽松（0o777）：/mnt/data/projects/open-android-intelligence/.worktrees/local-history-hermes/.native-validation-home/cache/scratch/oai-android-echo-uz5vk4fo/keys/gateway-master-key，必须是 0600。
+E         Traceback (most recent call last):
+E           File "/mnt/data/projects/open-android-intelligence/.worktrees/local-history-hermes/tests/android_gateway_fixture.py", line 387, in <module>
+E             main()
+E           File "/mnt/data/projects/open-android-intelligence/.worktrees/local-history-hermes/tests/android_gateway_fixture.py", line 341, in main
+E             asyncio.run(run_echo_agent(core, admin, exposure, args.port,
+E           File "/mnt/data/projects/open-android-intelligence/.toolchains/python-ci/cpython-3.11.17-linux-x86_64-gnu/lib/python3.11/asyncio/runners.py", line 190, in run
+E             return runner.run(main)
+E                    ^^^^^^^^^^^^^^^^
+E           File "/mnt/data/projects/open-android-intelligence/.toolchains/python-ci/cpython-3.11.17-linux-x86_64-gnu/lib/python3.11/asyncio/runners.py", line 118, in run
+E             return self._loop.run_until_complete(task)
+E                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           File "/mnt/data/projects/open-android-intelligence/.toolchains/python-ci/cpython-3.11.17-linux-x86_64-gnu/lib/python3.11/asyncio/base_events.py", line 654, in run_until_complete
+E             return future.result()
+E                    ^^^^^^^^^^^^^^^
+E           File "/mnt/data/projects/open-android-intelligence/.worktrees/local-history-hermes/tests/android_gateway_fixture.py", line 275, in run_echo_agent
+E             raise RuntimeError("隔离适配器未成功启动")
+E         RuntimeError: 隔离适配器未成功启动
+E         
+E       assert False
+E        +  where False = <built-in method startswith of str object at 0x559fdc633818>('http://127.0.0.1:')
+E        +    where <built-in method startswith of str object at 0x559fdc633818> = ''.startswith
+
+.worktrees/local-history-hermes/tests/test_android_echo_fixture.py:60: AssertionError
+_ test_stream_fixture_requires_each_live_delta_to_be_observed_before_completion[sse] _
+
+tmp_path = PosixPath('/tmp/pytest-of-djbd/pytest-4/test_stream_fixture_requires_e0')
+channel = 'sse'
+
+    @pytest.mark.parametrize("channel", ["sse", "websocket"])
+    def test_stream_fixture_requires_each_live_delta_to_be_observed_before_completion(tmp_path, channel):
+        async def scenario():
+            with _fixture_process(tmp_path, True, stream_agent=True) as (process, log_path):
+                base_url = await _fixture_url(process, log_path)
+                key = Ed25519PrivateKey.generate()
+                async with ClientSession() as client:
+                    bundle = await _login(client, base_url, key)
+                    created = await _request(client, base_url, bundle, key, "POST", PREFIX + "/conversations", {"clientConversationId": "cc_fixture_stream"}, "req_stream_create")
+                    conversation_id = created["data"]["conversation"]["conversationId"]
+                    _, headers = _signed_request(bundle, key, "GET", PREFIX + "/events", request_id="req_fixture_stream")
+                    headers["Accept"] = "text/event-stream"
+                    connection = await client.ws_connect(base_url + PREFIX + "/events", headers=headers) if channel == "websocket" else await client.get(base_url + PREFIX + "/events", headers=headers)
+    
+                    async def next_event():
+                        if channel == "sse":
+                            return await _next_event(connection)
+                        async with asyncio.timeout(5):
+                            frame = await connection.receive_json()
+                            return {**json.loads(frame["data"]), "event": frame["event"]}
+    
+                    try:
+                        await _request(client, base_url, bundle, key, "POST", f"{PREFIX}/conversations/{conversation_id}/messages", {"clientMessageId": "cm_fixture_stream", "text": "流式测试", "attachments": []}, "req_stream_message")
+                        events = []
+                        for expected in ("fixture-agent-", "fixture-agent-reply:\n", "fixture-agent-reply:\n流式测试"):
+                            event = await next_event()
+                            while event["event"] != "conversation.message.delta":
+                                event = await next_event()
+                            assert event["payload"]["text"] == expected
+                            events.append(event)
+                            # 未确认之前不允许模型完成，确保三个观察来自真实的逐步投递。
+                            process.stdin.write("continue\n")
+                            process.stdin.flush()
+                        event = await next_event()
+                        while event["event"] != "conversation.message.completed":
+                            event = await next_event()
+                        assert event["payload"]["text"] == "fixture-agent-reply:\n流式测试"
+                        assert {entry["payload"]["messageId"] for entry in [*events, event]} == {events[0]["payload"]["messageId"]}
+                        status = await next_event()
+                        while status["event"] != "conversation.message.status" or status["payload"]["status"] not in {"completed", "failed"}:
+                            status = await next_event()
+                        assert status["payload"]["status"] == "completed", log_path.read_text()
+                    finally:
+                        if channel == "websocket":
+                            await connection.close()
+                        else:
+                            connection.close()
+                async with asyncio.timeout(5):
+                    while not any(json.loads(line).get("fixtureEvent") == "stream-transport" for line in log_path.read_text().splitlines() if line.startswith("{")):
+                        await asyncio.sleep(0.01)
+                transports = [json.loads(line)["transport"] for line in log_path.read_text().splitlines() if line.startswith("{") and json.loads(line).get("fixtureEvent") == "stream-transport"]
+                assert transports == [channel]
+    
+>       asyncio.run(scenario())
+
+.worktrees/local-history-hermes/tests/test_android_echo_fixture.py:304: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+.toolchains/python-ci/cpython-3.11.17-linux-x86_64-gnu/lib/python3.11/asyncio/runners.py:190: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+.toolchains/python-ci/cpython-3.11.17-linux-x86_64-gnu/lib/python3.11/asyncio/runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.toolchains/python-ci/cpython-3.11.17-linux-x86_64-gnu/lib/python3.11/asyncio/base_events.py:654: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+.worktrees/local-history-hermes/tests/test_android_echo_fixture.py:255: in scenario
+    base_url = await _fixture_url(process, log_path)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+process = <Popen: returncode: 1 args: ['/mnt/data/projects/open-android-intelligence/....>
+log_path = PosixPath('/tmp/pytest-of-djbd/pytest-4/test_stream_fixture_requires_e0/fixture-stderr.txt')
+
+    async def _fixture_url(process, log_path):
+        first_line = await asyncio.wait_for(asyncio.to_thread(process.stdout.readline), timeout=10)
+>       assert first_line.startswith("http://127.0.0.1:"), log_path.read_text()
+E       AssertionError: [open_android] 主密钥来源不可用：主密钥文件权限过于宽松（0o777）：/mnt/data/projects/open-android-intelligence/.worktrees/local-history-hermes/.native-validation-home/cache/scratch/oai-android-echo-0imak0w5/keys/gateway-master-key，必须是 0600。
+E         Traceback (most recent call last):
+E           File "/mnt/data/projects/open-android-intelligence/.worktrees/local-history-hermes/tests/android_gateway_fixture.py", line 387, in <module>
+E             main()
+E           File "/mnt/data/projects/open-android-intelligence/.worktrees/local-history-hermes/tests/android_gateway_fixture.py", line 341, in main
+E             asyncio.run(run_echo_agent(core, admin, exposure, args.port,
+E           File "/mnt/data/projects/open-android-intelligence/.toolchains/python-ci/cpython-3.11.17-linux-x86_64-gnu/lib/python3.11/asyncio/runners.py", line 190, in run
+E             return runner.run(main)
+E                    ^^^^^^^^^^^^^^^^
+E           File "/mnt/data/projects/open-android-intelligence/.toolchains/python-ci/cpython-3.11.17-linux-x86_64-gnu/lib/python3.11/asyncio/runners.py", line 118, in run
+E             return self._loop.run_until_complete(task)
+E                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           File "/mnt/data/projects/open-android-intelligence/.toolchains/python-ci/cpython-3.11.17-linux-x86_64-gnu/lib/python3.11/asyncio/base_events.py", line 654, in run_until_complete
+E             return future.result()
+E                    ^^^^^^^^^^^^^^^
+E           File "/mnt/data/projects/open-android-intelligence/.worktrees/local-history-hermes/tests/android_gateway_fixture.py", line 275, in run_echo_agent
+E             raise RuntimeError("隔离适配器未成功启动")
+E         RuntimeError: 隔离适配器未成功启动
+E         
+E       assert False
+E        +  where False = <built-in method startswith of str object at 0x559fdc633818>('http://127.0.0.1:')
+E        +    where <built-in method startswith of str object at 0x559fdc633818> = ''.startswith
+
+.worktrees/local-history-hermes/tests/test_android_echo_fixture.py:60: AssertionError
+_ test_stream_fixture_requires_each_live_delta_to_be_observed_before_completion[websocket] _
+
+tmp_path = PosixPath('/tmp/pytest-of-djbd/pytest-4/test_stream_fixture_requires_e1')
+channel = 'websocket'
+
+    @pytest.mark.parametrize("channel", ["sse", "websocket"])
+    def test_stream_fixture_requires_each_live_delta_to_be_observed_before_completion(tmp_path, channel):
+        async def scenario():
+            with _fixture_process(tmp_path, True, stream_agent=True) as (process, log_path):
+                base_url = await _fixture_url(process, log_path)
+                key = Ed25519PrivateKey.generate()
+                async with ClientSession() as client:
+                    bundle = await _login(client, base_url, key)
+                    created = await _request(client, base_url, bundle, key, "POST", PREFIX + "/conversations", {"clientConversationId": "cc_fixture_stream"}, "req_stream_create")
+                    conversation_id = created["data"]["conversation"]["conversationId"]
+                    _, headers = _signed_request(bundle, key, "GET", PREFIX + "/events", request_id="req_fixture_stream")
+                    headers["Accept"] = "text/event-stream"
+                    connection = await client.ws_connect(base_url + PREFIX + "/events", headers=headers) if channel == "websocket" else await client.get(base_url + PREFIX + "/events", headers=headers)
+    
+                    async def next_event():
+                        if channel == "sse":
+                            return await _next_event(connection)
+                        async with asyncio.timeout(5):
+                            frame = await connection.receive_json()
+                            return {**json.loads(frame["data"]), "event": frame["event"]}
+    
+                    try:
+                        await _request(client, base_url, bundle, key, "POST", f"{PREFIX}/conversations/{conversation_id}/messages", {"clientMessageId": "cm_fixture_stream", "text": "流式测试", "attachments": []}, "req_stream_message")
+                        events = []
+                        for expected in ("fixture-agent-", "fixture-agent-reply:\n", "fixture-agent-reply:\n流式测试"):
+                            event = await next_event()
+                            while event["event"] != "conversation.message.delta":
+                                event = await next_event()
+                            assert event["payload"]["text"] == expected
+                            events.append(event)
+                            # 未确认之前不允许模型完成，确保三个观察来自真实的逐步投递。
+                            process.stdin.write("continue\n")
+                            process.stdin.flush()
+                        event = await next_event()
+                        while event["event"] != "conversation.message.completed":
+                            event = await next_event()
+                        assert event["payload"]["text"] == "fixture-agent-reply:\n流式测试"
+                        assert {entry["payload"]["messageId"] for entry in [*events, event]} == {events[0]["payload"]["messageId"]}
+                        status = await next_event()
+                        while status["event"] != "conversation.message.status" or status["payload"]["status"] not in {"completed", "failed"}:
+                            status = await next_event()
+                        assert status["payload"]["status"] == "completed", log_path.read_text()
+                    finally:
+                        if channel == "websocket":
+                            await connection.close()
+                        else:
+                            connection.close()
+                async with asyncio.timeout(5):
+                    while not any(json.loads(line).get("fixtureEvent") == "stream-transport" for line in log_path.read_text().splitlines() if line.startswith("{")):
+                        await asyncio.sleep(0.01)
+                transports = [json.loads(line)["transport"] for line in log_path.read_text().splitlines() if line.startswith("{") and json.loads(line).get("fixtureEvent") == "stream-transport"]
+                assert transports == [channel]
+    
+>       asyncio.run(scenario())
+
+.worktrees/local-history-hermes/tests/test_android_echo_fixture.py:304: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+.toolchains/python-ci/cpython-3.11.17-linux-x86_64-gnu/lib/python3.11/asyncio/runners.py:190: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+.toolchains/python-ci/cpython-3.11.17-linux-x86_64-gnu/lib/python3.11/asyncio/runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.toolchains/python-ci/cpython-3.11.17-linux-x86_64-gnu/lib/python3.11/asyncio/base_events.py:654: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+.worktrees/local-history-hermes/tests/test_android_echo_fixture.py:255: in scenario
+    base_url = await _fixture_url(process, log_path)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+process = <Popen: returncode: 1 args: ['/mnt/data/projects/open-android-intelligence/....>
+log_path = PosixPath('/tmp/pytest-of-djbd/pytest-4/test_stream_fixture_requires_e1/fixture-stderr.txt')
+
+    async def _fixture_url(process, log_path):
+        first_line = await asyncio.wait_for(asyncio.to_thread(process.stdout.readline), timeout=10)
+>       assert first_line.startswith("http://127.0.0.1:"), log_path.read_text()
+E       AssertionError: [open_android] 主密钥来源不可用：主密钥文件权限过于宽松（0o777）：/mnt/data/projects/open-android-intelligence/.worktrees/local-history-hermes/.native-validation-home/cache/scratch/oai-android-echo-xzesa982/keys/gateway-master-key，必须是 0600。
+E         Traceback (most recent call last):
+E           File "/mnt/data/projects/open-android-intelligence/.worktrees/local-history-hermes/tests/android_gateway_fixture.py", line 387, in <module>
+E             main()
+E           File "/mnt/data/projects/open-android-intelligence/.worktrees/local-history-hermes/tests/android_gateway_fixture.py", line 341, in main
+E             asyncio.run(run_echo_agent(core, admin, exposure, args.port,
+E           File "/mnt/data/projects/open-android-intelligence/.toolchains/python-ci/cpython-3.11.17-linux-x86_64-gnu/lib/python3.11/asyncio/runners.py", line 190, in run
+E             return runner.run(main)
+E                    ^^^^^^^^^^^^^^^^
+E           File "/mnt/data/projects/open-android-intelligence/.toolchains/python-ci/cpython-3.11.17-linux-x86_64-gnu/lib/python3.11/asyncio/runners.py", line 118, in run
+E             return self._loop.run_until_complete(task)
+E                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           File "/mnt/data/projects/open-android-intelligence/.toolchains/python-ci/cpython-3.11.17-linux-x86_64-gnu/lib/python3.11/asyncio/base_events.py", line 654, in run_until_complete
+E             return future.result()
+E                    ^^^^^^^^^^^^^^^
+E           File "/mnt/data/projects/open-android-intelligence/.worktrees/local-history-hermes/tests/android_gateway_fixture.py", line 275, in run_echo_agent
+E             raise RuntimeError("隔离适配器未成功启动")
+E         RuntimeError: 隔离适配器未成功启动
+E         
+E       assert False
+E        +  where False = <built-in method startswith of str object at 0x559fdc633818>('http://127.0.0.1:')
+E        +    where <built-in method startswith of str object at 0x559fdc633818> = ''.startswith
+
+.worktrees/local-history-hermes/tests/test_android_echo_fixture.py:60: AssertionError
+_______ test_fixture_cli_password_login_batch_and_reply_semantics[True] ________
+
+tmp_path = PosixPath('/tmp/pytest-of-djbd/pytest-4/test_fixture_cli_password_logi1')
+echo_agent = True
+
+    @pytest.mark.parametrize("echo_agent", [False, True])
+    def test_fixture_cli_password_login_batch_and_reply_semantics(tmp_path, echo_agent):
+        async def scenario():
+            with _fixture_process(tmp_path, echo_agent) as (process, log_path):
+                base_url = await _fixture_url(process, log_path)
+                key = Ed25519PrivateKey.generate()
+                async with ClientSession() as client:
+                    bundle = await _login(client, base_url, key)
+                    created = await _request(client, base_url, bundle, key, "POST", PREFIX + "/conversations", {"clientConversationId": "cc_fixture_cli"}, "req_cli_create")
+                    conversation_id = created["data"]["conversation"]["conversationId"]
+                    _, headers = _signed_request(bundle, key, "GET", PREFIX + "/events", request_id="req_cli_stream")
+                    headers["Accept"] = "text/event-stream"
+                    async with client.get(base_url + PREFIX + "/events", headers=headers) as stream:
+                        assert stream.status == 200
+                        if echo_agent:
+                            await _request(client, base_url, bundle, key, "GET", PREFIX + "/sync/snapshot", request_id="req_cli_snapshot")
+                            while True:
+                                event = await _next_event(stream)
+                                if event["event"] == "gateway.notice" and event["payload"]["noticeCode"] == "SYNC_BASELINE":
+                                    break
+                        else:
+                            assert await stream.read() == b": fixture connected\n\n"
+                        target = f"{PREFIX}/conversations/{conversation_id}/message-batches"
+                        receipt = await _request(client, base_url, bundle, key, "POST", target, BATCH, "req_cli_batch")
+                        members = receipt["data"]["members"]
+                        assert len({member["messageId"] for member in members}) == 2
+                        if echo_agent:
+                            seen = []
+                            while sum(event["event"] == "conversation.message.status" and event["payload"]["status"] == "completed" for event in seen) < 2:
+                                seen.append(await _next_event(stream))
+                            replies = [event for event in seen if event["event"] == "conversation.message.completed"]
+                            assert len(replies) == 1
+                            assert replies[0]["payload"]["conversationId"] == conversation_id
+                            assert replies[0]["payload"]["text"] == "fixture-agent-reply:\n  第一条\n\n🙂 第二条  "
+                        replay = await _request(client, base_url, bundle, key, "POST", target, BATCH, "req_cli_batch")
+                        assert replay == receipt
+                        if echo_agent:
+                            ordinary = {"clientMessageId": "cm_cli_regular", "text": "后续普通消息", "attachments": []}
+                            await _request(client, base_url, bundle, key, "POST", f"{PREFIX}/conversations/{conversation_id}/messages", ordinary, "req_cli_regular")
+                            while True:
+                                event = await _next_event(stream)
+                                if event["event"] == "conversation.message.completed":
+                                    assert event["payload"]["text"] == "fixture-agent-reply:\n后续普通消息"
+                                    break
+            diagnostic_rows = [json.loads(line) for line in log_path.read_text().splitlines() if line.startswith("{")]
+            if echo_agent:
+                turns = [row for row in diagnostic_rows if row.get("fixtureEvent") == "agent-turn"]
+                assert [row["clientMessageId"] for row in turns] == ["cm_http_first", "cm_cli_regular"]
+                assert "hook failed" not in log_path.read_text()
+                assert "Inbound dispatch failed" not in log_path.read_text()
+                mode = next(row for row in diagnostic_rows if row.get("fixtureMode") == "echo-agent")
+                if os.environ.get("OAI_REQUIRE_NATIVE_HERMES") == "1":
+                    assert mode["host"] == "native"
+            else:
+                assert not any(row.get("fixtureEvent") == "agent-turn" for row in diagnostic_rows)
+    
+>       asyncio.run(scenario())
+
+.worktrees/local-history-hermes/tests/test_android_echo_fixture.py:363: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+.toolchains/python-ci/cpython-3.11.17-linux-x86_64-gnu/lib/python3.11/asyncio/runners.py:190: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+.toolchains/python-ci/cpython-3.11.17-linux-x86_64-gnu/lib/python3.11/asyncio/runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.toolchains/python-ci/cpython-3.11.17-linux-x86_64-gnu/lib/python3.11/asyncio/base_events.py:654: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+.worktrees/local-history-hermes/tests/test_android_echo_fixture.py:311: in scenario
+    base_url = await _fixture_url(process, log_path)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+process = <Popen: returncode: 1 args: ['/mnt/data/projects/open-android-intelligence/....>
+log_path = PosixPath('/tmp/pytest-of-djbd/pytest-4/test_fixture_cli_password_logi1/fixture-stderr.txt')
+
+    async def _fixture_url(process, log_path):
+        first_line = await asyncio.wait_for(asyncio.to_thread(process.stdout.readline), timeout=10)
+>       assert first_line.startswith("http://127.0.0.1:"), log_path.read_text()
+E       AssertionError: [open_android] 主密钥来源不可用：主密钥文件权限过于宽松（0o777）：/mnt/data/projects/open-android-intelligence/.worktrees/local-history-hermes/.native-validation-home/cache/scratch/oai-android-echo-jdgua2t0/keys/gateway-master-key，必须是 0600。
+E         Traceback (most recent call last):
+E           File "/mnt/data/projects/open-android-intelligence/.worktrees/local-history-hermes/tests/android_gateway_fixture.py", line 387, in <module>
+E             main()
+E           File "/mnt/data/projects/open-android-intelligence/.worktrees/local-history-hermes/tests/android_gateway_fixture.py", line 341, in main
+E             asyncio.run(run_echo_agent(core, admin, exposure, args.port,
+E           File "/mnt/data/projects/open-android-intelligence/.toolchains/python-ci/cpython-3.11.17-linux-x86_64-gnu/lib/python3.11/asyncio/runners.py", line 190, in run
+E             return runner.run(main)
+E                    ^^^^^^^^^^^^^^^^
+E           File "/mnt/data/projects/open-android-intelligence/.toolchains/python-ci/cpython-3.11.17-linux-x86_64-gnu/lib/python3.11/asyncio/runners.py", line 118, in run
+E             return self._loop.run_until_complete(task)
+E                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           File "/mnt/data/projects/open-android-intelligence/.toolchains/python-ci/cpython-3.11.17-linux-x86_64-gnu/lib/python3.11/asyncio/base_events.py", line 654, in run_until_complete
+E             return future.result()
+E                    ^^^^^^^^^^^^^^^
+E           File "/mnt/data/projects/open-android-intelligence/.worktrees/local-history-hermes/tests/android_gateway_fixture.py", line 275, in run_echo_agent
+E             raise RuntimeError("隔离适配器未成功启动")
+E         RuntimeError: 隔离适配器未成功启动
+E         
+E       assert False
+E        +  where False = <built-in method startswith of str object at 0x559fdc633818>('http://127.0.0.1:')
+E        +    where <built-in method startswith of str object at 0x559fdc633818> = ''.startswith
+
+.worktrees/local-history-hermes/tests/test_android_echo_fixture.py:60: AssertionError
+=========================== short test summary info ============================
+FAILED .worktrees/local-history-hermes/tests/test_native_history_projection.py::test_native_history_keeps_the_attachment_identity_and_metadata_of_the_user_message
+FAILED .worktrees/local-history-hermes/tests/test_android_echo_fixture.py::test_fixture_cli_starts_on_random_loopback_port_and_stops[True]
+FAILED .worktrees/local-history-hermes/tests/test_android_echo_fixture.py::test_native_history_fixture_preserves_original_text_tools_and_owned_image_over_http
+FAILED .worktrees/local-history-hermes/tests/test_android_echo_fixture.py::test_stream_fixture_requires_each_live_delta_to_be_observed_before_completion[sse]
+FAILED .worktrees/local-history-hermes/tests/test_android_echo_fixture.py::test_stream_fixture_requires_each_live_delta_to_be_observed_before_completion[websocket]
+FAILED .worktrees/local-history-hermes/tests/test_android_echo_fixture.py::test_fixture_cli_password_login_batch_and_reply_semantics[True]
+6 failed, 28 passed in 13.30s

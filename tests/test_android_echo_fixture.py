@@ -182,6 +182,7 @@ def test_native_history_fixture_preserves_original_text_tools_and_owned_image_ov
                     assert user["parts"] == [{"type": "text", "text": original}, {
                         "type": "attachment", "attachmentId": attachment_id,
                         "filename": "synthetic.png", "mediaType": "image/png", "sizeBytes": len(image),
+                        "sha256":"sha256:" + digest,
                     }]
                     for item in published:
                         restored = next(row for row in rows if row["messageId"] == item["messageId"])

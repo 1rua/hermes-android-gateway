@@ -1,0 +1,39 @@
+FF                                                                       [100%]
+=================================== FAILURES ===================================
+__________ test_original_survives_source_retirement_and_stable_retry ___________
+
+original = (<open_android_intelligence_gateway.core.GatewayCore object at 0x7fee5d7116d0>, <open_android_intelligence_gateway.cor...8c91-e6adc52cb3eb', PosixPath('/tmp/pytest-of-djbd/pytest-0/test_original_survives_source_0/hermes/outputs/中文资料.json'))
+
+    def test_original_survives_source_retirement_and_stable_retry(original):
+        _core, account, cid, source = original
+        media = HistoryMedia(account)
+        part = media.register(cid, "msg_media", source)
+        payload = source.read_bytes()
+        source.rename(source.with_suffix(".retired"))
+>       assert media.metadata(cid, part["attachmentId"])["remoteAvailable"]
+E       assert False
+
+.worktrees/local-history-hermes/tests/test_history_media_streaming.py:46: AssertionError
+___________ test_large_original_uses_bounded_stream_and_legacy_limit ___________
+
+original = (<open_android_intelligence_gateway.core.GatewayCore object at 0x7fee5d612190>, <open_android_intelligence_gateway.cor...b218-2389396acf31', PosixPath('/tmp/pytest-of-djbd/pytest-0/test_large_original_uses_bound0/hermes/outputs/中文资料.json'))
+
+    def test_large_original_uses_bounded_stream_and_legacy_limit(original):
+        _core, account, cid, source = original
+        chunk = b"q" * (64 * 1024)
+        with source.open("wb") as output:
+            for _ in range(600):
+                output.write(chunk)
+        media = HistoryMedia(account)
+        part = media.register(cid, "msg_large", source)
+        context = {"deviceId":"dev_media", "pairingGeneration":1, "grantRevision":1}
+        assert not media.metadata(cid, part["attachmentId"])["remoteAvailable"]
+>       assert media.metadata(cid, part["attachmentId"], format="stream-v1")["remoteAvailable"]
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       TypeError: HistoryMedia.metadata() got an unexpected keyword argument 'format'
+
+.worktrees/local-history-hermes/tests/test_history_media_streaming.py:64: TypeError
+=========================== short test summary info ============================
+FAILED .worktrees/local-history-hermes/tests/test_history_media_streaming.py::test_original_survives_source_retirement_and_stable_retry
+FAILED .worktrees/local-history-hermes/tests/test_history_media_streaming.py::test_large_original_uses_bounded_stream_and_legacy_limit
+2 failed, 11 deselected in 1.46s

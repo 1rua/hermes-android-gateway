@@ -4,6 +4,9 @@
 Hermes Agent 宿主，通过一条经过认证的本地通道承载对话、通知、短信、设备请求与
 附件传输。
 
+本轮插件发行版本为 `2.1.1`，协议版本仍为 `2.1.0`。附件完成事件的核心 Schema
+已经变化，App 和插件必须使用相同核心摘要同步升级。
+
 ## 安装
 
 ```bash
@@ -41,7 +44,7 @@ hermes plugins install 1rua/hermes-gateway-plugin --ref <40位提交SHA>
 ```json
 {
   "repository": "https://github.com/1rua/open-android-intelligence.git",
-  "revision": "95f2e1702a6e360b6779c6c69667d36a0e96d683"
+  "revision": "851abc44e7ebf5a5aa0ea7ffe311d59be1538058"
 }
 ```
 
@@ -73,6 +76,23 @@ export OPEN_ANDROID_GATEWAY_CONTRACT_ROOT=/secure/path/gateway-contract
 
 内网镜像可用 `OPEN_ANDROID_GATEWAY_CONTRACT_REPOSITORY` 覆盖仓库地址（提交号仍
 由 pin 决定）。显式传入的契约目录优先级最高，其次是该环境变量，最后才是向上查找。
+
+## 历史附件与默认本地保存
+
+用户上传和 Agent 发出的原件在投递前进入宿主
+`HERMES_HOME/history-media/open-android-intelligence/` 专属目录，按 Gateway 存储归属、
+账号和会话隔离。原始临时发送文件退休后，已经采用的历史仍可读取，不延长 Gateway
+附件暂存的期限。旧历史引用仍有原件时按需迁移并保留附件身份；旧字节已丢失时
+返回 `REMOTE_UNAVAILABLE`，不会把缺失的原件显示为成功保存。
+
+新 App 使用已签名查询参数 `format=stream-v1` 依次读取 metadata、申请单用途 grant、
+流式读取 content。响应携带明确的格式、媒体类型、原始长度和摘要；大于旧 25 MiB
+门槛的文件按 64 KiB 块读取。无格式参数保留有界 JSON/Base64 响应。
+
+契约固定在 `851abc44e7ebf5a5aa0ea7ffe311d59be1538058`，核心摘要为
+`sha256:63223ba149355032800eeae8a9f0827d542bbde7ca9e4eeb19f93df30e7febde`。
+旧响应表示兼容仅适用于同一核心摘要；只升级 App 或插件一端会被
+`PROTOCOL_INCOMPATIBLE` 拒绝登录。
 
 ## 配置
 

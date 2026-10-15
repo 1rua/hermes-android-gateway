@@ -1,0 +1,16 @@
+{
+  "caseCount": 70,
+  "formatVersion": "1.0.0",
+  "implementation": "hermes-python",
+  "recordsDigest": "sha256:25a56959e5295a0ed06c131c403490cda4a29ce64b9782d2c185935e20a7c260",
+  "vectorDigests": {
+    "vectors/attachments.json": "sha256:c33b8b2e4fc55e6c41d91ff7424fa72c03e2a85769e1fc0b1ff172b287a9de5c",
+    "vectors/auth-sessions.json": "sha256:6b56eb7a6c6799c77cd2636f8282e13b06e6499eed4a3fc5a67ccb4e042c1ec8",
+    "vectors/device-requests.json": "sha256:7262d52c85a35b9323228b840a9f1426dd9118928d702943dd519b607f882283",
+    "vectors/dispatched-schema-fixtures-1.0.0.schema.json": "sha256:50609441f7e4b0e31f5c47168b1310c20052d235aca963c168bd78e2fa507b5c",
+    "vectors/dispatched-schema-fixtures.json": "sha256:3c087da32521571e805f8231133dfed6e63fe50cabbc913c413ba97a5efdef35",
+    "vectors/protocol-negotiation.json": "sha256:c4d82af8ee0f7c840c4b5e112ae16aa75edd98cce47ec8b0eaafe9847543e722",
+    "vectors/request-signatures.json": "sha256:f3f15cbd8fe052d3ca45d1ec4ce88a945d3d18bc11651b67a6a45c121c24a0ee",
+    "vectors/sse-events.json": "sha256:233856d41ebbae544d229e0e1a5cf83b5ac14e77b9d3beda54e22a9c10948ea0"
+  }
+}

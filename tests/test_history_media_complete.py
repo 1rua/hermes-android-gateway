@@ -41,9 +41,10 @@ def test_host_originals_have_scoped_single_use_expiring_grants_and_unavailable_m
         with pytest.raises(GatewayError, match="AUTHENTICATION_FAILED"):
             media.content(cid, attachment_id, expired, context, now + timedelta(seconds=121))
         # Equal-sized replacement is unavailable too; metadata remains readable.
-        output.write_bytes(b"x" * output.stat().st_size)
+        owned = Path(media._record(cid, attachment_id)["path"])
+        owned.write_bytes(b"x" * owned.stat().st_size)
         assert media.metadata(cid, attachment_id)["status"] == "REMOTE_UNAVAILABLE"
-        output.unlink()
+        owned.rename(owned.with_suffix(".retired"))
         assert not media.metadata(cid, attachment_id)["remoteAvailable"]
     finally:
         account.close()

@@ -1,0 +1,101 @@
+........................................................................ [ 19%]
+........................................................................ [ 39%]
+........................................................................ [ 59%]
+........................................................................ [ 79%]
+......F................................................................. [ 98%]
+....                                                                     [100%]
+=================================== FAILURES ===================================
+___ test_reset_fences_real_inflight_old_password_validation_before_issuance ____
+
+tmp_path = PosixPath('/tmp/pytest-of-djbd/pytest-6/test_reset_fences_real_infligh0')
+
+    def test_reset_fences_real_inflight_old_password_validation_before_issuance(tmp_path):
+        async def scenario():
+            core, admin, adapter = setup(tmp_path)
+            verified, release = threading.Event(), threading.Event()
+    
+            class ScheduledVerifier(AccountPasswordVerifier):
+                def verify(self, *args):
+                    result = super().verify(*args)
+                    assert result is True
+                    verified.set()
+                    assert release.wait(10)
+                    return result
+    
+            core.credential_verifier = ScheduledVerifier(core)
+            assert await adapter.connect()
+            port = adapter._site._server.sockets[0].getsockname()[1]
+            origin = f"http://127.0.0.1:{port}/open-android-intelligence/v2"
+            try:
+                async with aiohttp.ClientSession() as client:
+                    async with client.post(origin + "/negotiate", json=negotiation(core)) as response:
+                        assert response.status == 200
+                    pending = asyncio.create_task(client.post(origin + "/sessions/password", json=password_body()))
+                    assert await asyncio.to_thread(verified.wait, 10)
+                    assert admin.reset_password({"accountId": "alice", "password": "new password", "localConfirmation": True})["ok"]
+                    release.set()
+                    async with await pending as response:
+                        assert response.status == 401
+                        assert (await response.json())["error"]["code"] == "AUTHENTICATION_FAILED"
+                    account = core.open_gateway_account("alice")
+                    try:
+                        for table in ("access_sessions", "refresh_credentials", "device_keys"):
+                            assert account.store.database.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0] == 0
+                    finally:
+                        account.close()
+                    core.credential_verifier = AccountPasswordVerifier(core)
+                    async with client.post(origin + "/sessions/password", json=password_body()) as response:
+                        assert response.status == 401
+                    async with client.post(origin + "/sessions/password", json=password_body(password="new password")) as response:
+                        assert response.status == 200
+                        bundle = (await response.json())["data"]
+                    body = {"negotiationId": "neg_alice", "accountId": "alice", "installationId": INSTALLATION["installationId"],
+                            "deviceId": bundle["deviceId"], "refreshCredential": bundle["refreshCredential"]}
+                    async with client.post(origin + "/sessions/refresh", json=body) as response:
+                        assert response.status == 200
+            finally:
+                release.set()
+                await adapter.disconnect()
+>       asyncio.run(scenario())
+
+.worktrees/local-history-hermes/tests/test_login_reset_fences.py:122: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+.toolchains/python-ci/cpython-3.11.17-linux-x86_64-gnu/lib/python3.11/asyncio/runners.py:190: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+.toolchains/python-ci/cpython-3.11.17-linux-x86_64-gnu/lib/python3.11/asyncio/runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.toolchains/python-ci/cpython-3.11.17-linux-x86_64-gnu/lib/python3.11/asyncio/base_events.py:654: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    async def scenario():
+        core, admin, adapter = setup(tmp_path)
+        verified, release = threading.Event(), threading.Event()
+    
+        class ScheduledVerifier(AccountPasswordVerifier):
+            def verify(self, *args):
+                result = super().verify(*args)
+                assert result is True
+                verified.set()
+                assert release.wait(10)
+                return result
+    
+        core.credential_verifier = ScheduledVerifier(core)
+        assert await adapter.connect()
+        port = adapter._site._server.sockets[0].getsockname()[1]
+        origin = f"http://127.0.0.1:{port}/open-android-intelligence/v2"
+        try:
+            async with aiohttp.ClientSession() as client:
+                async with client.post(origin + "/negotiate", json=negotiation(core)) as response:
+                    assert response.status == 200
+                pending = asyncio.create_task(client.post(origin + "/sessions/password", json=password_body()))
+>               assert await asyncio.to_thread(verified.wait, 10)
+E               assert False
+
+.worktrees/local-history-hermes/tests/test_login_reset_fences.py:97: AssertionError
+=========================== short test summary info ============================
+FAILED .worktrees/local-history-hermes/tests/test_login_reset_fences.py::test_reset_fences_real_inflight_old_password_validation_before_issuance
+1 failed, 363 passed in 69.53s (0:01:09)

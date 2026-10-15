@@ -3448,6 +3448,8 @@ class ConversationPort:
                         part_dict["filename"] = att_obj.get("filename") or ""
                         part_dict["mediaType"] = att_obj.get("mediaType") or ""
                         part_dict["sizeBytes"] = att_obj.get("sizeBytes") or 0
+                        if att_obj.get("sha256"):
+                            part_dict["sha256"] = "sha256:" + str(att_obj["sha256"]).removeprefix("sha256:")
                 except Exception:
                     pass
                 parts.append(part_dict)
@@ -5333,15 +5335,45 @@ class GatewayCore:
                         return _success(context,account.conversations.workflow.accept_batch(batch_route.group(1),body,context,now))
                     media_match=re.fullmatch(r"/open-android-intelligence/v2/conversations/([^/]+)/attachments/([^/]+)/(metadata|cache-grant|content)",target_path)
                     if media_match:
-                        from .history_media import HistoryMedia
-                        conversation_id,media_id,operation=media_match.groups(); media=HistoryMedia(account)
-                        if method=="GET" and operation=="metadata": return _success(context,{"metadata":media.metadata(conversation_id,media_id)})
-                        if method=="POST" and operation=="cache-grant":
-                            if body!={}: raise GatewayError("SCHEMA_INVALID")
-                            return _success(context,media.grant(conversation_id,media_id,context,now))
-                        if method=="GET" and operation=="content":
-                            content,media_type=media.content(conversation_id,media_id,parse_qs(urlsplit(target).query).get("grantId",[""])[0],context,now)
-                            return _success(context,{"contentBase64":base64.b64encode(content).decode(),"mediaType":media_type})
+                        from .history_media import HistoryMedia, STREAM_FORMAT, historical_media_query
+                        conversation_id, media_id, operation = media_match.groups()
+                        media = HistoryMedia(account)
+                        format, grant_id = historical_media_query(parsed_target.query, operation)
+                        if method == "GET" and operation == "metadata":
+                            return _success(context, {"metadata":media.metadata(conversation_id, media_id, format=format)})
+                        if method == "POST" and operation == "cache-grant":
+                            if body != {}:
+                                raise GatewayError("SCHEMA_INVALID")
+                            return _success(context, media.grant(conversation_id, media_id, context, now, format=format))
+                        if method == "GET" and operation == "content":
+                            if format == STREAM_FORMAT:
+                                def validate_history_stream():
+                                    # 原请求句柄会关闭；每块从当前账号重新核对生命周期，不能重放签名 nonce。
+                                    if not self.account_exists(context["accountId"]):
+                                        raise GatewayError("AUTHENTICATION_FAILED")
+                                    current_account = self.open_gateway_account(context["accountId"])
+                                    try:
+                                        active = current_account.store.database.execute(
+                                            "SELECT s.status,s.expires_at,k.pairing_generation,k.grant_revision "
+                                            "FROM access_sessions s JOIN device_keys k ON k.device_id=s.device_id "
+                                            "WHERE s.session_id=? AND s.device_id=?",
+                                            (context["sessionId"], context["deviceId"]),
+                                        ).fetchone()
+                                        if not active or active[0] != "active" or _now(active[1]) <= _now() or int(active[2]) != context["pairingGeneration"] or int(active[3]) != context["grantRevision"]:
+                                            raise GatewayError("AUTHENTICATION_FAILED")
+                                        current_media = HistoryMedia(current_account)
+                                        current_media._refresh_host_state(conversation_id, media_id)
+                                        current_row = current_media._record(conversation_id, media_id)
+                                        if current_row.get("deleted") or any(current_row.get(name) != original_row.get(name) for name in ("path","sizeBytes","sha256","mediaType")):
+                                            raise GatewayError("ATTACHMENT_NOT_FOUND")
+                                    finally:
+                                        current_account.close()
+                                result = media.content_stream(conversation_id, media_id, grant_id, context, now,
+                                    validate=validate_history_stream)
+                                original_row = media._record(conversation_id, media_id)
+                                return result
+                            content, media_type = media.content(conversation_id, media_id, grant_id, context, now)
+                            return _success(context, {"contentBase64":base64.b64encode(content).decode(), "mediaType":media_type})
                         raise GatewayError("SCHEMA_INVALID")
                     if method == "GET" and target_path == "/open-android-intelligence/v2/sync/snapshot":
                         baseline = account.events.append("gateway.notice",context["correlationId"],{"noticeCode":"SYNC_BASELINE"},now=now)

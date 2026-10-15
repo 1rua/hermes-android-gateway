@@ -215,6 +215,9 @@ class GatewayHttpRoute:
             if not _is_pre_auth(verified):
                 return {"statusCode": 401, "headers": dict(_RESPONSE_HEADERS), "body": _failure(request, "AUTHENTICATION_REQUIRED")}
         body = self._services.core.handle(verified)
+        from .history_media import HistoryMediaStream
+        if isinstance(body, HistoryMediaStream):
+            return {"statusCode":200, "headers":body.headers, "body":None, "stream":body}
         status = _status(body)
         if _get(_get(body, "error", default={}), "code") in _AUTHENTICATION_FAILURE_CODES:
             status = 401
@@ -292,10 +295,44 @@ class GatewayHttpRoute:
             })
             return {"statusCode": 503, "headers": dict(_RESPONSE_HEADERS), "body": body}
         body = self._services.core.handle(verified)
+        from .history_media import HistoryMediaStream
+        if isinstance(body, HistoryMediaStream):
+            return {"statusCode":200, "headers":body.headers, "body":None, "stream":body}
         return {"statusCode": _status(body), "headers": dict(_RESPONSE_HEADERS), "body": body}
 
     def handler(self, request: Any, response: Any) -> bool:
         result = self._handle_raw(request)
+        stream = result.get("stream")
+        if stream is not None:
+            writer, end = _get(response, "write"), _get(response, "end")
+            if not callable(writer) or not callable(end):
+                stream.close()
+                failed = self.failure_response(None, None, "ATTACHMENT_STORAGE_UNAVAILABLE")
+                _set_response(response, failed["statusCode"], failed["headers"], failed["body"])
+                return True
+            prepared = False
+            try:
+                first = next(stream, None)
+                _set_response_headers(response, result["statusCode"], result["headers"])
+                prepared = True
+                if first is not None:
+                    writer(first)
+                for chunk in stream:
+                    writer(chunk)
+                end()
+            except Exception as exc:
+                if not prepared:
+                    failed = self.failure_response(None, None, getattr(exc, "code", "ATTACHMENT_READ_FAILED"))
+                    _set_response(response, failed["statusCode"], failed["headers"], failed["body"])
+                else:
+                    terminate = _get(response, "destroy", "close")
+                    if callable(terminate):
+                        terminate()
+                    else:
+                        raise
+            finally:
+                stream.close()
+            return True
         _set_response(response, result["statusCode"], result["headers"], result["body"])
         return True
 
@@ -412,7 +449,7 @@ def _strict_json(body: bytes) -> Any:
     return json.loads(body.decode("utf-8"), object_pairs_hook=pairs)
 
 
-def _set_response(response: Any, status: int, headers: Mapping[str, str], body: Mapping[str, Any]) -> None:
+def _set_response_headers(response: Any, status: int, headers: Mapping[str, str]) -> None:
     if hasattr(type(response), "status_code") or hasattr(response, "status_code"):
         try:
             response.status_code = status
@@ -426,6 +463,10 @@ def _set_response(response: Any, status: int, headers: Mapping[str, str], body: 
     if callable(setter):
         for name, value in headers.items():
             setter(name, value)
+
+
+def _set_response(response: Any, status: int, headers: Mapping[str, str], body: Mapping[str, Any]) -> None:
+    _set_response_headers(response, status, headers)
     end = _get(response, "end")
     if callable(end):
         end(json.dumps(body, ensure_ascii=False, separators=(",", ":")))

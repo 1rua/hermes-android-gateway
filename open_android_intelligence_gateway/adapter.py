@@ -1580,8 +1580,39 @@ class OpenAndroidPlatformAdapter(BasePlatformAdapter):
                 result = await asyncio.to_thread(handler_found._handle_raw, raw_req)
             finally:
                 self._password_tasks -= 1
+        elif re.fullmatch(r"/open-android-intelligence/v2/conversations/[^/]+/attachments/[^/]+/(metadata|cache-grant|content)", path):
+            # 原件散列、采用及 SQLite 读取离开事件循环，网络回复只保留一个有界块。
+            result = await asyncio.to_thread(handler_found._handle_raw, raw_req)
         else:
             result = handler_found._handle_raw(raw_req)
+        stream = result.get("stream")
+        if stream is not None:
+            response = web.StreamResponse(status=result["statusCode"], headers=result["headers"])
+            prepared = False
+            try:
+                # 首块的授权/来源失败发生在响应头发布前，仍使用正常错误外壳。
+                chunk = await asyncio.to_thread(next, stream, None)
+                await response.prepare(request)
+                prepared = True
+                while chunk is not None:
+                    await response.write(chunk)
+                    chunk = await asyncio.to_thread(next, stream, None)
+                await response.write_eof()
+                return response
+            except (ConnectionResetError, asyncio.CancelledError):
+                if request.transport is not None:
+                    request.transport.close()
+                raise
+            except Exception as exc:
+                if prepared:
+                    # 已发响应头不能再混入 JSON；终止传输交给长度/摘要验证拒绝半文件。
+                    if request.transport is not None:
+                        request.transport.close()
+                    return response
+                failed = handler_found.failure_response(None, None, getattr(exc, "code", "ATTACHMENT_READ_FAILED"))
+                return web.json_response(failed["body"], status=failed["statusCode"])
+            finally:
+                stream.close()
         status = result.get("statusCode", 200)
         headers = result.get("headers", {})
         body = result.get("body", {})

@@ -183,11 +183,10 @@ def test_consumes_the_shared_schema_and_vector_registry(tmp_path):
     # closed `schemaName` set; the conversation-UI document is a local suite.
     assert contract_files <= discovered
     assert discovered - contract_files == {"conversation-ui.json"}
-    # The shared Protocol 2.1 fixture set adds two independent message-status
-    # cases to the prior vectors, including the failed/errorCode distinction.
-    assert len(cases) == 66
-    assert len({case["id"] for case in cases}) == 66
-    assert len(results) == 66
+    # 固定契约包含消息状态与四项封闭附件结构的正反向向量。
+    assert len(cases) == 70
+    assert len({case["id"] for case in cases}) == 70
+    assert len(results) == 70
     assert {result["status"] for result in results} == {"pass"}
     assert {result["implementation"] for result in results} == {"hermes-python"}
 
