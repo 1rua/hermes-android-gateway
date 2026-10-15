@@ -65,6 +65,7 @@ jobs:
             tests/test_native_history_complete.py \
             tests/test_native_history_projection.py \
             tests/test_native_streaming_delivery.py \
+            tests/test_native_turn_lifecycle.py \
             tests/test_android_echo_fixture.py
         env:
           OPEN_ANDROID_GATEWAY_CONTRACT_ROOT: ${{ github.workspace }}/.contract-source/gateway-contract

@@ -34,6 +34,7 @@ from .account_paths import (
 from .audit import AuditStore
 from .contract_assets import CONTRACT_DIRECTORY_NAME, CONTRACT_ROOT_ENV
 from .credentials import hash_password, verify_password
+from .host_commands import command_catalog as native_command_catalog
 
 
 logger = logging.getLogger("open_android_intelligence_gateway.core")
@@ -1694,6 +1695,7 @@ class AgentSessionBindings:
     # Where a binding row came from. The command entry is the only path that also
     # creates the Agent session up front; the others reuse or create lazily.
     CREATED_VIA_NEW_COMMAND = "new-command"
+    CREATED_VIA_CONVERSATION_CREATE = "conversation-create"
     CREATED_VIA_CONVERSATION_READ = "conversation-read"
     CREATED_VIA_INBOUND_MESSAGE = "inbound-message"
 
@@ -3096,6 +3098,18 @@ class ConversationPort:
         current = _now(now)
         conversation_id = f"conv_{uuid.uuid4()}"
         with self.store.transaction():
+            prior = self.store.database.execute(
+                "SELECT conversation_id,title FROM conversations WHERE client_conversation_id=?",
+                (client_conversation_id,),
+            ).fetchone()
+            receipt_key = "conversation-create:" + client_conversation_id
+            saved = self.store.database.execute("SELECT value FROM account_metadata WHERE key=?", (receipt_key,)).fetchone()
+            if prior:
+                original = json.loads(saved[0]) if saved else {"title": prior["title"]}
+                if original["title"] != title:
+                    raise GatewayError("IDEMPOTENCY_CONFLICT")
+                return {"conversationId": prior["conversation_id"], "clientConversationId": client_conversation_id, "title": title}
+            self.store.database.execute("INSERT INTO account_metadata(key,value) VALUES (?,?)", (receipt_key, _json({"title": title})))
             self.store.database.execute(
                 "INSERT INTO conversations(conversation_id, client_conversation_id, title, created_at) VALUES (?, ?, ?, ?)",
                 (conversation_id, client_conversation_id, title, iso_millis(current)),
@@ -4063,64 +4077,6 @@ _PERSISTABLE_ERRORS = {
 
 COMMAND_CATALOG_FORMAT = "agent-command-catalog-1.0"
 
-DEFAULT_COMMAND_CATALOG: tuple[dict[str, Any], ...] = (
-    {
-        "id": "new",
-        "invocation": "/new",
-        "title": "新建对话",
-        "description": "结束当前会话并创建全新对话线程",
-        "acceptsArguments": False,
-        "availability": "available",
-    },
-    {
-        "id": "models",
-        "invocation": "/models",
-        "title": "[provider]",
-        "description": "切换或查看活动大模型与参数",
-        "acceptsArguments": True,
-        "availability": "available",
-    },
-    {
-        "id": "status",
-        "invocation": "/status",
-        "title": "网关状态",
-        "description": "查看当前网关连通性、时延与配对状态",
-        "acceptsArguments": False,
-        "availability": "available",
-    },
-    {
-        "id": "review",
-        "invocation": "/review",
-        "title": "[diff]",
-        "description": "审查代码变更、规范或当前文档",
-        "acceptsArguments": True,
-        "availability": "available",
-    },
-    {
-        "id": "gateway",
-        "invocation": "/gateway",
-        "title": "<url>",
-        "description": "切换或添加连接的 Agent Gateway",
-        "acceptsArguments": True,
-        "availability": "available",
-    },
-    {
-        "id": "clear",
-        "invocation": "/clear",
-        "title": "清空时间线",
-        "description": "清空当前时间线临时渲染状态",
-        "acceptsArguments": False,
-        "availability": "available",
-    },
-    {
-        "id": "help",
-        "invocation": "/help",
-        "title": "[command]",
-        "description": "查看所有可用指令与使用指南",
-        "acceptsArguments": True,
-        "availability": "available",
-    },
-)
 
 
 def _contains_identity_override(value: Any) -> bool:
@@ -4161,7 +4117,7 @@ class GatewayCore:
         self.attachment_policy = attachment_policy or DEFAULT_ATTACHMENT_POLICY
         self.credential_verifier = credential_verifier
         self._online_devices: dict[tuple[str,str,str], tuple[VerifiedRequestContext,int]] = {}
-        self.command_catalog = tuple(command_catalog) if command_catalog is not None else DEFAULT_COMMAND_CATALOG
+        self.command_catalog = (command_catalog if callable(command_catalog) else tuple(command_catalog)) if command_catalog is not None else native_command_catalog
         self.history_reader: Any = None
         self.generation_canceller: Any = None
         self._cancel_locks: dict[tuple[str, str], tuple[Any, int]] = {}
@@ -4327,23 +4283,14 @@ class GatewayCore:
     listGatewayAccountIds = list_gateway_account_ids
 
     def command_catalog_response(self, language_code: str) -> dict[str, Any]:
-        """The shared command catalog in one response.
-
-        Each entry carries both spellings the two consumers read: the
-        discovery fields (`invocation`, `title`, `acceptsArguments`) the phone
-        renders, and the contract fields (`command`, `description`,
-        `argumentHint`) the shared schema validates. Deriving one from the
-        other here keeps a single source of truth.
-        """
-        catalog = tuple(self.command_catalog)
+        """Return the current host catalog in the negotiated Android shape."""
+        catalog = tuple(self.command_catalog() if callable(self.command_catalog) else self.command_catalog)
         fingerprint = hashlib.sha256(
             _json({"format": COMMAND_CATALOG_FORMAT, "commands": catalog}).encode("utf-8"),
         ).hexdigest()[:16]
         commands = []
         for entry in catalog:
             item = dict(entry)
-            item.setdefault("command", item.get("invocation", ""))
-            item.setdefault("argumentHint", item.get("title", "") if item.get("acceptsArguments") else "")
             commands.append(item)
         return {
             "format": COMMAND_CATALOG_FORMAT,
@@ -5416,10 +5363,15 @@ class GatewayCore:
                         body_map = body if isinstance(body, Mapping) else None
                         if body_map is None or not self.contracts.validate("conversation.create", body_map):
                             raise GatewayError("SCHEMA_INVALID")
-                        return _success(context, {"conversation": account.conversations.create(
+                        conversation = account.conversations.create(
                             str(body_map["clientConversationId"]),
                             body_map.get("title"), context["correlationId"], _request_now(request),
-                        )})
+                        )
+                        account.agent_sessions.record(
+                            conversation["conversationId"], AgentSessionBindings.CREATED_VIA_CONVERSATION_CREATE,
+                            context["requestId"], _request_now(request),
+                        )
+                        return _success(context, {"conversation": conversation})
                     if method == "GET" and target_path == "/open-android-intelligence/v2/conversations":
                         return _success(context, {"conversations": account.conversations.list()})
                     message_match = re.fullmatch(r"/open-android-intelligence/v2/conversations/([^/]+)/messages", target_path)

@@ -1,0 +1,16 @@
+{
+  "contractRevision": "4dd825ad3ae6ad20019ff38f6ff5c4f1a8708394",
+  "coreSchemaHash": "sha256:59244afa522108614123e4d047a8ff51f6f2e2651e9b800bb8c63e5e6e82d320",
+  "nativePinnedSdk": "75b083e9399115b12513385252811f09c3503c90",
+  "nativeLatestSdk": "b51e8b850494e0a95a4b410c3d9b9a26df9ae261",
+  "files": {
+    "open_android_intelligence_gateway/adapter.py": "sha256:ae0ff22fb13355c5046f0050f324355ae16cb545788c85be7c3cba5335be5732",
+    "open_android_intelligence_gateway/core.py": "sha256:a0b154b6bff194f93580f459c218db26a7b52ec5547b0db78b8d7532fbfdfc2f",
+    "open_android_intelligence_gateway/host_commands.py": "sha256:96ce692b58a1b3bc06d1c7a29968a86241f21722b797d063f19703f916761a1c",
+    "tests/test_native_turn_lifecycle.py": "sha256:95747ed2f75dc60a03c12b552dcab5ebebe752657c1771822894e04decb803a7",
+    "tests/fixtures/voice-aac.m4a": "sha256:92373300704a13ece30c2a8dbbb574aef0d14a7bbca985e83f650b7d6b423185",
+    "tests/test_conversation_workflow.py": "sha256:afa6639c03c63bcda7db15622267abf62f338e0cd95ef17324c12b9e8d995221",
+    "tests/test_event_stream_transport.py": "sha256:d674ae04233b14a6dbc6bfcdaa97840da249a31a5a55d9af1db9307a4db3a924",
+    "tests/test_message_dispatch_outbox.py": "sha256:262e5f2291d9c77e405b681c8b0d516251a34ec92ad90c3cff5bd14df5d3ed07"
+  }
+}
