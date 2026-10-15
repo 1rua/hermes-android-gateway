@@ -96,7 +96,11 @@ def test_new_conversation_command_does_not_create_agent_outbox_entry(tmp_path):
         account.close()
 
 
-def test_unknown_mime_attachment_is_a_document_media_event(tmp_path):
+@pytest.mark.parametrize(("filename", "media_type", "message_type"), [
+    ("payload.custom", "application/x-custom", "DOCUMENT"),
+    ("voice_recording.m4a", "audio/mp4", "AUDIO"),
+])
+def test_verified_attachment_preserves_format_in_host_media_event(tmp_path, filename, media_type, message_type):
     core = trust_core(create_gateway_core(
         storage_root=tmp_path,
         secret_store=make_secret_store(),
@@ -105,8 +109,8 @@ def test_unknown_mime_attachment_is_a_document_media_event(tmp_path):
     content = b"custom document bytes"
     attachment = account.attachments.create(
         clientAttachmentId="client_att_custom",
-        filename="payload.custom",
-        mediaType="application/x-custom",
+        filename=filename,
+        mediaType=media_type,
         sizeBytes=len(content),
         sha256=hashlib.sha256(content).hexdigest(),
         correlationId="cor_custom_attachment",
@@ -140,10 +144,11 @@ def test_unknown_mime_attachment_is_a_document_media_event(tmp_path):
 
     assert len(captured) == 1
     event = captured[0]
-    assert event.message_type == getattr(MessageType, "DOCUMENT")
-    assert event.media_types == ["application/x-custom"]
+    assert event.message_type == getattr(MessageType, message_type)
+    assert event.media_types == [media_type]
     assert len(event.media_urls) == 1
     media_path = Path(event.media_urls[0])
+    assert media_path.suffix == Path(filename).suffix
     assert media_path.read_bytes() == content
     asyncio.run(adapter.on_processing_complete(event, "success"))
     assert not media_path.exists()

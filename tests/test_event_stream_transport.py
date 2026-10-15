@@ -419,16 +419,17 @@ def test_committed_events_for_another_account_stay_off_this_stream(tmp_path):
     asyncio.run(scenario())
 
 
-def test_command_catalog_includes_all_standard_commands(tmp_path):
+def test_command_catalog_uses_current_provider_without_inventing_aliases(tmp_path):
     services, core = _services(tmp_path, None)
-    res = core.command_catalog_response("zh-CN")
-    commands = {c["invocation"]: c for c in res["commands"]}
-    for cmd in ["/new", "/models", "/status", "/review", "/gateway", "/clear", "/help"]:
-        assert cmd in commands, f"Missing command: {cmd}"
-    assert commands["/models"]["acceptsArguments"] is True
-    assert commands["/status"]["acceptsArguments"] is False
-    assert commands["/review"]["acceptsArguments"] is True
-    assert commands["/gateway"]["acceptsArguments"] is True
-    assert commands["/clear"]["acceptsArguments"] is False
-    assert commands["/help"]["acceptsArguments"] is True
-    assert commands["/new"]["acceptsArguments"] is False
+    current = [{"id": "inspect", "invocation": "/inspect", "title": "Inspect session",
+                "description": "Read the current session", "acceptsArguments": False,
+                "availability": "available"}]
+    core.command_catalog = lambda: current
+    first = core.command_catalog_response("zh-CN")
+    assert first["commands"] == current
+    assert "command" not in first["commands"][0]
+    assert "argumentHint" not in first["commands"][0]
+    current.clear()
+    second = core.command_catalog_response("zh-CN")
+    assert second["commands"] == []
+    assert second["catalogVersion"] != first["catalogVersion"]

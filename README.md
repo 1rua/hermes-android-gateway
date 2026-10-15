@@ -5,7 +5,8 @@ Hermes Agent 宿主，通过一条经过认证的本地通道承载对话、通�
 附件传输。
 
 本轮插件发行版本为 `2.1.1`，协议版本仍为 `2.1.0`。附件完成事件的核心 Schema
-已经变化，App 和插件必须使用相同核心摘要同步升级。
+已经变化，App 和插件必须使用相同核心摘要同步升级。当前版本同时修复了宿主作用域
+回调下的取消能力识别、整轮生成结束收口、直接创建独立会话及运行时命令目录。
 
 ## 安装
 
@@ -44,7 +45,7 @@ hermes plugins install 1rua/hermes-gateway-plugin --ref <40位提交SHA>
 ```json
 {
   "repository": "https://github.com/1rua/open-android-intelligence.git",
-  "revision": "851abc44e7ebf5a5aa0ea7ffe311d59be1538058"
+  "revision": "4dd825ad3ae6ad20019ff38f6ff5c4f1a8708394"
 }
 ```
 
@@ -89,10 +90,25 @@ export OPEN_ANDROID_GATEWAY_CONTRACT_ROOT=/secure/path/gateway-contract
 流式读取 content。响应携带明确的格式、媒体类型、原始长度和摘要；大于旧 25 MiB
 门槛的文件按 64 KiB 块读取。无格式参数保留有界 JSON/Base64 响应。
 
-契约固定在 `851abc44e7ebf5a5aa0ea7ffe311d59be1538058`，核心摘要为
-`sha256:63223ba149355032800eeae8a9f0827d542bbde7ca9e4eeb19f93df30e7febde`。
+契约固定在 `4dd825ad3ae6ad20019ff38f6ff5c4f1a8708394`，核心摘要为
+`sha256:59244afa522108614123e4d047a8ff51f6f2e2651e9b800bb8c63e5e6e82d320`。
 旧响应表示兼容仅适用于同一核心摘要；只升级 App 或插件一端会被
 `PROTOCOL_INCOMPATIBLE` 拒绝登录。
+
+## 会话、生成与命令
+
+手机直接调用 `POST /v2/conversations` 创建空会话，宿主为其分配独立的原生 Agent
+session，不向旧会话发送 `/new`。同一 `clientConversationId` 的网络重试复用会话及
+session；相同客户端身份携带不同创建参数返回 `IDEMPOTENCY_CONFLICT`。
+
+`conversation.message.completed` 只表示一条助手消息完成，工具进度和最终答复可处于
+同一轮生成。整轮由原生 `on_processing_complete` 收口所有未完成进度消息，再发送
+带 `generationId` 的用户消息 `completed` / `failed` 状态；取消使用宿主的硬中断和
+原生处理任务取消路径。无法接入宿主取消桥接时不声明 `generation-cancel-v1`。
+
+`GET /v2/commands` 每次从当前 Hermes 命令注册表、可用插件命令及启用的技能读取，
+不再返回手机专用的固定命令清单。录音附件支持 `.m4a` / `audio/mp4`，按原始字节
+进入宿主 `AUDIO` 消息，由宿主完成处理。
 
 ## 配置
 

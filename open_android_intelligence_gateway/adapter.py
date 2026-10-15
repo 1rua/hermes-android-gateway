@@ -795,6 +795,37 @@ class OpenAndroidPlatformAdapter(BasePlatformAdapter):
         self._generation_locks: Dict[tuple[str,str],asyncio.Lock] = {}
         self._lifecycle_lock = asyncio.Lock()
         self._conversation_platforms: Dict[tuple[str, str], str] = {}
+        # A turn can leave several progress messages open before the final
+        # response. Only the host's processing-complete hook ends the turn.
+        self._streaming_replies: Dict[tuple[str, str, str], Dict[str, str]] = {}
+
+    def set_message_handler(self, handler: Any) -> None:
+        super().set_message_handler(handler)
+        # Hosts may wire callbacks after connect or replace them on reconnect.
+        self.services.core.generation_canceller = self._native_generation_canceller()
+
+    def _host_runner(self) -> Any:
+        runner = getattr(self, "gateway_runner", None)
+        if callable(getattr(runner, "_interrupt_and_clear_session", None)):
+            return runner
+        # Hermes wraps bound handlers in profile scopes. Walk only references
+        # captured by that callback (never module globals or unrelated objects).
+        pending = [getattr(self, "_message_handler", None)]
+        seen: set[int] = set()
+        while pending and len(seen) < 32:
+            candidate = pending.pop()
+            if candidate is None or id(candidate) in seen:
+                continue
+            seen.add(id(candidate))
+            if callable(getattr(candidate, "_interrupt_and_clear_session", None)):
+                return candidate
+            pending.extend((getattr(candidate, "__self__", None),
+                            getattr(candidate, "__wrapped__", None),
+                            getattr(candidate, "func", None)))
+            for cell in getattr(candidate, "__closure__", ()) or ():
+                with suppress(ValueError):
+                    pending.append(cell.cell_contents)
+        return None
 
     def set_session_store(self, session_store: Any) -> None:
         super().set_session_store(session_store)
@@ -807,16 +838,23 @@ class OpenAndroidPlatformAdapter(BasePlatformAdapter):
             core.history_reader = HermesHistoryPort(core, session_store).read
 
     def _native_generation_canceller(self) -> Any:
-        runner=getattr(getattr(self,"_message_handler",None),"__self__",None)
+        runner=self._host_runner()
         interrupt=getattr(runner,"_interrupt_and_clear_session",None)
         if not callable(interrupt) or not callable(getattr(self,"cancel_session_processing",None)): return None
         def cancel(account_id: str,conversation_id: str,generation_id: str) -> str:
             loop=self._loop
             if loop is None or loop.is_closed(): return "OUTCOME_UNKNOWN"
             async def stop() -> str:
-                from gateway.session import build_session_key
                 source=self._agent_source(conversation_id,account_id)
-                session_key=build_session_key(source,group_sessions_per_user=self.config.extra.get("group_sessions_per_user",True),thread_sessions_per_user=self.config.extra.get("thread_sessions_per_user",False))
+                account=self.services.core.open_gateway_account(account_id)
+                try:
+                    binding=account.agent_sessions.lookup(conversation_id)
+                finally: account.close()
+                session_key=(binding or {}).get("sessionKey")
+                if not session_key:
+                    store=getattr(self,"_session_store",None)
+                    if store is None: return "OUTCOME_UNKNOWN"
+                    session_key=self._host_session_key(store,source)
                 task=getattr(self,"_session_tasks",{}).get(session_key)
                 if task is None or task.done():
                     account=self.services.core.open_gateway_account(account_id)
@@ -830,7 +868,9 @@ class OpenAndroidPlatformAdapter(BasePlatformAdapter):
                 return "CANCELLED" if task.done() else "OUTCOME_UNKNOWN"
             future=asyncio.run_coroutine_threadsafe(stop(),loop)
             try: return future.result(timeout=12)
-            except Exception: return "OUTCOME_UNKNOWN"
+            except Exception:
+                future.cancel()
+                return "OUTCOME_UNKNOWN"
         return cancel
 
     @property
@@ -1044,12 +1084,17 @@ class OpenAndroidPlatformAdapter(BasePlatformAdapter):
         if not account_id: return SendResult(success=False,error="ACCOUNT_NOT_CONFIGURED",retryable=False)
         account=self.services.core.open_gateway_account(account_id)
         try:
+            generation = self._reply_generation(account, chat_id)
+            if generation and generation["state"] in {"completed", "failed", "cancelled"}:
+                return SendResult(success=False, error="GENERATION_FINISHED", retryable=False)
             message_id=self._published_reply_id(chat_id,caption or "",None)
             part=HistoryMedia(account).register(chat_id,message_id,file_path)
             key=f"history-media-reply:{message_id}:{part['attachmentId']}"
             account.store.database.execute("INSERT INTO account_metadata(key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",(key,account.store.seal_json(part,key)))
             account.conversations.record_assistant_message(chat_id,message_id,caption or "")
             payload=self._message_payload(chat_id,message_id,caption or "")
+            if generation:
+                payload["generationId"] = generation["generationId"]
             payload["parts"].extend(HistoryMedia(account).reply_parts(message_id))
             origin=resolve_origin(self.services.core,"",account_id,chat_id)
             visible_payload = dict(payload)
@@ -1169,6 +1214,7 @@ class OpenAndroidPlatformAdapter(BasePlatformAdapter):
         text: str,
         occurred_at: Optional[str] = None,
         account_id: Optional[str] = None,
+        generation_id: Optional[str] = None,
     ) -> None:
         """Persist one assistant event; the committed event delivers itself.
 
@@ -1185,6 +1231,13 @@ class OpenAndroidPlatformAdapter(BasePlatformAdapter):
         payload = self._message_payload(chat_id, message_id, text, occurred_at)
         account = self.services.core.open_gateway_account(target_account)
         try:
+            generation = self._reply_generation(account, chat_id, generation_id)
+            if generation:
+                # A host callback which outlives cancellation/completion must
+                # never reopen a finished generation on the phone.
+                if generation["state"] in {"completed", "failed", "cancelled"}:
+                    return
+                payload["generationId"] = generation["generationId"]
             from .history_media import HistoryMedia
             payload["parts"].extend(HistoryMedia(account).reply_parts(message_id))
             if event_type == "conversation.message.completed":
@@ -1206,8 +1259,49 @@ class OpenAndroidPlatformAdapter(BasePlatformAdapter):
                     payload["revision"] = saved["revision"]
             correlation_id = origin["messageId"] if origin and origin.get("conversationId") == chat_id else message_id
             account.events.append(event_type, correlation_id, payload, occurred_at)
+            if generation:
+                key = (target_account, chat_id, generation["generationId"])
+                if event_type == "conversation.message.delta":
+                    self._streaming_replies.setdefault(key, {})[message_id] = text
+                else:
+                    pending = self._streaming_replies.get(key)
+                    if pending is not None:
+                        pending.pop(message_id, None)
+                        if not pending:
+                            self._streaming_replies.pop(key, None)
         finally:
             account.close()
+
+    def _reply_generation(self, account: Any, chat_id: str, generation_id: str | None = None) -> Any:
+        from .device_tools import resolve_origin, trusted_turn
+        workflow = account.conversations.workflow
+        if generation_id:
+            return workflow._get("generation:" + generation_id)
+        origin = resolve_origin(self.services.core, "", account.account_id, chat_id)
+        if origin and origin.get("conversationId") == chat_id:
+            generation = workflow.for_message(origin.get("messageId", ""))
+            turn = trusted_turn.get()
+            in_turn = turn is not None and turn.get("core") is self.services.core and turn.get("messageId") == origin.get("messageId")
+            # Historical origin lookup can also serve independent notifications
+            # after a run. Only an actual captured turn can identify late output
+            # as belonging to an already finished generation.
+            if generation and (in_turn or generation["state"] in {"queued", "running", "unknown"}):
+                return generation
+        try:
+            current = workflow.current(chat_id)
+        except GatewayError as exc:
+            if exc.code != "SCHEMA_INVALID":
+                raise
+            return None
+        return workflow._get("generation:" + current["generationId"]) if current else None
+
+    async def _finish_streaming_replies(self, account_id: str, chat_id: str, generation_id: str) -> None:
+        pending = self._streaming_replies.pop((account_id, chat_id, generation_id), {})
+        for message_id, text in pending.items():
+            await self._publish_event(
+                "conversation.message.completed", chat_id, message_id, text,
+                account_id=account_id, generation_id=generation_id,
+            )
 
     def _message_payload(
         self,
@@ -1618,6 +1712,15 @@ class OpenAndroidPlatformAdapter(BasePlatformAdapter):
         body = result.get("body", {})
 
         account_header = _header_value(raw_req["headers"], "x-open-android-intelligence-account")
+
+        if method == "POST" and path == "/open-android-intelligence/v2/conversations" and status in (200, 201):
+            created = (body.get("data") or {}).get("conversation") or {}
+            conversation_id = created.get("conversationId")
+            if conversation_id:
+                await self._ensure_agent_session(
+                    conversation_id, account_header or self._account_id,
+                    force_new=False, created_via=AgentSessionBindings.CREATED_VIA_CONVERSATION_CREATE,
+                )
 
         # If this was an inbound message POST, trigger Hermes agent turn
         if method == "POST" and "/conversations/" in path and (path.endswith("/messages") or path.endswith("/message-batches")) and status in (200, 201):
@@ -2164,6 +2267,8 @@ class OpenAndroidPlatformAdapter(BasePlatformAdapter):
             record = account.conversations.dispatch_message(client_message_id)
             if record is not None:
                 generation=account.conversations.workflow.for_message(record["messageId"])
+                if generation:
+                    await self._finish_streaming_replies(account_id, record["conversationId"], generation["generationId"])
                 if generation and generation["state"]=="cancelled": return
                 if status=="completed" and record["status"]=="queued":
                     account.conversations.update_dispatch_status(record["messageId"],"delivered",None,f"agent-adopted-{record['messageId']}",claim_token=getattr(event,"_gateway_claim_token",None))

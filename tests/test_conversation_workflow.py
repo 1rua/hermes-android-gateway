@@ -56,6 +56,18 @@ def test_unknown_cancellation_pauses_fifo_until_native_receipt(tmp_path):
         assert a.conversations.claim_dispatch('cm_later')['messageId']==second['messageId']
     finally:a.close()
 
+def test_create_retry_uses_client_identity_and_original_title_after_rename(tmp_path):
+    a, _, _, _ = setup(tmp_path)
+    try:
+        first = a.conversations.create("cc_retry", "Original", "cor_first")
+        a.conversations.update_title(first["conversationId"], "Renamed", "cor_rename")
+        assert a.conversations.create("cc_retry", "Original", "cor_retry") == first
+        with pytest.raises(GatewayError, match="IDEMPOTENCY_CONFLICT"):
+            a.conversations.create("cc_retry", "Changed request body", "cor_conflict")
+        assert len([c for c in a.conversations.list() if c["clientConversationId"] == "cc_retry"]) == 1
+    finally:
+        a.close()
+
 @pytest.mark.parametrize('member',[{'clientMessageId':'cm_bad','text':' /new'},{'clientMessageId':'cm_bad','text':'x','attachmentId':'att_bad'},{'clientMessageId':'cm_bad','text':'x'*65537}])
 def test_batch_rejects_commands_attachments_and_oversized_text(tmp_path,member):
     a,cid,ctx,body=setup(tmp_path)
