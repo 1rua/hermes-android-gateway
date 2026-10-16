@@ -155,7 +155,6 @@ class ConversationWorkflow:
             if generation["state"] in {"completed", "failed"}: return "ALREADY_COMPLETED"
             if generation["state"] == "queued":
                 self.settle(generation["messageIds"][0], "cancelled")
-                self.store.database.execute("UPDATE conversation_message_dispatch SET status='failed',error_code='AGENT_UNAVAILABLE',claim_token=NULL,claim_until=NULL WHERE message_id=?", (generation["messageIds"][0],))
                 return "CANCELLED"
             if cancel is None: return "UNSUPPORTED"
             # Pause this thread before crossing the native cancellation boundary.
@@ -179,7 +178,11 @@ class ConversationWorkflow:
             self._put("generation:" + generation_id, generation)
             for mid in generation["messageIds"]:
                 self.store.database.execute("UPDATE messages SET text='' WHERE message_id=?", (mid,))
-            self.store.database.execute("UPDATE conversation_message_dispatch SET status='failed',error_code='AGENT_UNAVAILABLE',claim_token=NULL,claim_until=NULL WHERE message_id=?", (generation["messageIds"][0],))
+            dispatch = self.store.database.execute("SELECT status FROM conversation_message_dispatch WHERE message_id=?",
+                (generation["messageIds"][0],)).fetchone()
+            if dispatch and dispatch[0] in {"queued", "delivered"}:
+                self.port.update_dispatch_status(generation["messageIds"][0], "failed", "AGENT_UNAVAILABLE",
+                    context["correlationId"], now, force=True)
             self.port.events.append("conversation.generation.cancelled", context["correlationId"],
                 {"conversationId": conversation_id, "generationId": generation_id, "outcome": outcome}, now)
         elif outcome == "ALREADY_COMPLETED": self.settle(generation["messageIds"][0], "completed")

@@ -171,6 +171,35 @@ def test_cancel_still_requires_idempotency_key_to_match_authenticated_request(tm
     assert calls == []
 
 
+def test_queued_cancel_fences_claim_and_emits_terminal_status_for_every_member(tmp_path):
+    core, conversation_id = _core_and_conversation(tmp_path)
+    context = {"deviceId": "dev_boundary", "pairingGeneration": 1,
+        "requestId": "req_seed", "correlationId": "cor_seed"}
+    account = core.open_gateway_account(ACCOUNT_ID)
+    try:
+        with account.store.transaction():
+            receipt = account.conversations.workflow.accept_batch(conversation_id, BATCH, context, NOW)
+        gid = receipt["generationId"]
+        assert account.conversations.workflow.prepare_cancel(conversation_id, gid, context, None) == "CANCELLED"
+        assert account.conversations.claim_dispatch("cm_first", now=NOW) is None
+    finally:
+        account.close()
+    target = f"{PREFIX}/conversations/{conversation_id}/generations/{gid}/cancel"
+    request = _request("POST", target, {"clientMessageId": "cm_cancel_queued"}, "req_cancel_queued")
+    response = core.handle(request)
+    assert response["data"]["outcome"] == "CANCELLED"
+    assert core.handle(request) == response
+    account = core.open_gateway_account(ACCOUNT_ID)
+    try:
+        terminal = [e["payload"] for e in account.events.read_after(None, NOW)
+            if e["eventType"] == "conversation.message.status" and e["payload"]["status"] == "failed"]
+        assert {p["clientMessageId"] for p in terminal} == {"cm_first", "cm_second"}
+        assert len(terminal) == 2
+        assert all(p["generationId"] == gid and p["errorCode"] == "AGENT_UNAVAILABLE" for p in terminal)
+    finally:
+        account.close()
+
+
 def test_snapshot_handle_uses_request_time_without_entering_rename_branch(tmp_path):
     core, conversation_id = _core_and_conversation(tmp_path)
 
