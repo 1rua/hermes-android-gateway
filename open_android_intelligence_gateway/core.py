@@ -5536,7 +5536,10 @@ class GatewayCore:
                         )
 
                 if cancel_route:
-                    if not isinstance(body,Mapping) or set(body)!={"requestId"} or body["requestId"] != context["requestId"]: raise GatewayError("SCHEMA_INVALID")
+                    canonical_cancel = isinstance(body, Mapping) and self.contracts.validate("conversation.generationCancel", body)
+                    legacy_cancel = isinstance(body, Mapping) and set(body) == {"requestId"} and body["requestId"] == context["requestId"]
+                    if not canonical_cancel and not legacy_cancel:
+                        raise GatewayError("SCHEMA_INVALID")
                     def decision_preflight() -> None:
                         native_cancel = (lambda cid,gid: self.generation_canceller(context["accountId"],cid,gid)) if self.generation_canceller else None
                         cancel_handoff["outcome"] = account.conversations.workflow.prepare_cancel(*cancel_route.groups(),context,native_cancel)
