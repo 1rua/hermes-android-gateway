@@ -866,7 +866,13 @@ class OpenAndroidPlatformAdapter(BasePlatformAdapter):
                 # Use the same hard interrupt/run invalidation path as Hermes /stop.
                 await interrupt(session_key,source,interrupt_reason="Gateway generation cancelled",invalidation_reason="gateway_generation_cancel")
                 await self.cancel_session_processing(session_key)
-                return "CANCELLED" if task.done() else "OUTCOME_UNKNOWN"
+                if not task.done():
+                    return "OUTCOME_UNKNOWN"
+                # A host may defer its completion callback. Close the content
+                # already shown to clients before Core publishes terminal
+                # dispatch statuses, without waiting for that callback.
+                await self._finish_streaming_replies(account_id, conversation_id, generation_id)
+                return "CANCELLED"
             future=asyncio.run_coroutine_threadsafe(stop(),loop)
             try: return future.result(timeout=12)
             except Exception:
@@ -1713,10 +1719,23 @@ class OpenAndroidPlatformAdapter(BasePlatformAdapter):
             created = (body.get("data") or {}).get("conversation") or {}
             conversation_id = created.get("conversationId")
             if conversation_id:
-                await self._ensure_agent_session(
-                    conversation_id, account_header or self._account_id,
-                    force_new=False, created_via=AgentSessionBindings.CREATED_VIA_CONVERSATION_CREATE,
-                )
+                try:
+                    await self._ensure_agent_session(
+                        conversation_id, account_header or self._account_id,
+                        force_new=False, created_via=AgentSessionBindings.CREATED_VIA_CONVERSATION_CREATE,
+                    )
+                except GatewayError as exc:
+                    # Core's create receipt is already committed. Preserve it
+                    # and its conversation identity while requiring repair of
+                    # the host binding before returning a usable conversation.
+                    # Replaying that same request retries only the binding.
+                    failed = handler_found.failure_response(
+                        body.get("requestId"), body.get("correlationId"), exc.code,
+                        {**exc.details, "conversationId": conversation_id, "conversationCreated": True,
+                         "recovery": "REPAIR_HOST_SESSION_BINDING_AND_RETRY_SAME_REQUEST"},
+                    )
+                    return web.json_response(failed["body"], status=failed["statusCode"],
+                        headers={k: v for k, v in failed["headers"].items() if k.lower() != "content-type"})
 
         # If this was an inbound message POST, trigger Hermes agent turn
         if method == "POST" and "/conversations/" in path and (path.endswith("/messages") or path.endswith("/message-batches")) and status in (200, 201):

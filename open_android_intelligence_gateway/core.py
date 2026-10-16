@@ -3094,6 +3094,53 @@ class ConversationPort:
         from .conversation_workflow import ConversationWorkflow
         self.workflow = ConversationWorkflow(self)
 
+    def _legacy_create_receipt(self, client_conversation_id: str) -> dict[str, Any]:
+        """Recover one creation identity from authenticated HTTP outcomes.
+
+        Older databases permit duplicate client identities. Row order, titles,
+        and native-session bindings cannot establish which thread was returned
+        to the caller. Only an unambiguous recorded create outcome can do that.
+        HTTP receipts remain immutable, including their original replay result.
+        """
+        candidates: dict[str, dict[str, Any]] = {}
+        for row in self.store.database.execute(
+            "SELECT device_id,request_id,input_hash,outcome_json FROM idempotency_ledger"
+        ):
+            try:
+                outcome = self.store.open_json(
+                    row["outcome_json"], f"idempotency:{row['device_id']}:{row['request_id']}",
+                )
+            except GatewayError as exc:
+                # Unreadable evidence cannot prove that the identity is unique.
+                raise GatewayError("IDEMPOTENCY_CONFLICT") from exc
+            if not isinstance(outcome, Mapping) or "error" in outcome:
+                continue
+            data = outcome.get("data")
+            conversation = data.get("conversation") if isinstance(data, Mapping) else None
+            if not isinstance(conversation, Mapping) or conversation.get("clientConversationId") != client_conversation_id:
+                continue
+            conversation_id = conversation.get("conversationId")
+            if not isinstance(conversation_id, str) or "title" not in conversation:
+                continue
+            title = conversation["title"]
+            if title is not None and not isinstance(title, str):
+                continue
+            bodies = [{"clientConversationId": client_conversation_id, "title": title}]
+            if title is None:
+                bodies.append({"clientConversationId": client_conversation_id})
+            if row["input_hash"] not in {
+                _hash_input("POST", "/open-android-intelligence/v2/conversations", body) for body in bodies
+            }:
+                continue
+            candidate = {"conversationId": conversation_id, "title": title}
+            previous = candidates.get(conversation_id)
+            if previous is not None and previous != candidate:
+                raise GatewayError("IDEMPOTENCY_CONFLICT")
+            candidates[conversation_id] = candidate
+        if len(candidates) != 1:
+            raise GatewayError("IDEMPOTENCY_CONFLICT")
+        return next(iter(candidates.values()))
+
     def create(self, client_conversation_id: str, title: str | None, correlation_id: str, now: datetime | str | None = None) -> dict[str, Any]:
         current = _now(now)
         conversation_id = f"conv_{uuid.uuid4()}"
@@ -3101,15 +3148,53 @@ class ConversationPort:
             prior = self.store.database.execute(
                 "SELECT conversation_id,title FROM conversations WHERE client_conversation_id=?",
                 (client_conversation_id,),
-            ).fetchone()
+            ).fetchall()
             receipt_key = "conversation-create:" + client_conversation_id
             saved = self.store.database.execute("SELECT value FROM account_metadata WHERE key=?", (receipt_key,)).fetchone()
+            try:
+                if saved is None:
+                    original = None
+                elif saved[0].startswith("aead-v1:"):
+                    original = self.store.open_json(saved[0], receipt_key)
+                else:
+                    # Legacy receipts contain only the original title. A
+                    # canonical identity must always have AEAD authentication.
+                    original = json.loads(saved[0])
+                    if isinstance(original, dict) and "conversationId" in original:
+                        raise GatewayError("IDEMPOTENCY_CONFLICT")
+            except (GatewayError, TypeError, ValueError) as exc:
+                raise GatewayError("IDEMPOTENCY_CONFLICT") from exc
+            if saved is not None:
+                if not isinstance(original, dict) or "title" not in original:
+                    raise GatewayError("IDEMPOTENCY_CONFLICT")
+                if original["title"] is not None and not isinstance(original["title"], str):
+                    raise GatewayError("IDEMPOTENCY_CONFLICT")
+                if "conversationId" in original and not isinstance(original["conversationId"], str):
+                    raise GatewayError("IDEMPOTENCY_CONFLICT")
             if prior:
-                original = json.loads(saved[0]) if saved else {"title": prior["title"]}
+                if original is None or "conversationId" not in original:
+                    if len(prior) == 1:
+                        canonical = {"conversationId": prior[0]["conversation_id"],
+                                     "title": original["title"] if original else prior[0]["title"]}
+                    else:
+                        canonical = self._legacy_create_receipt(client_conversation_id)
+                        if original is not None and original["title"] != canonical["title"]:
+                            raise GatewayError("IDEMPOTENCY_CONFLICT")
+                    original = canonical
+                if original["conversationId"] not in {row["conversation_id"] for row in prior}:
+                    raise GatewayError("IDEMPOTENCY_CONFLICT")
                 if original["title"] != title:
                     raise GatewayError("IDEMPOTENCY_CONFLICT")
-                return {"conversationId": prior["conversation_id"], "clientConversationId": client_conversation_id, "title": title}
-            self.store.database.execute("INSERT INTO account_metadata(key,value) VALUES (?,?)", (receipt_key, _json({"title": title})))
+                self.store.database.execute(
+                    "INSERT INTO account_metadata(key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                    (receipt_key, self.store.seal_json(original, receipt_key)),
+                )
+                return {"conversationId": original["conversationId"], "clientConversationId": client_conversation_id, "title": title}
+            if saved is not None:
+                raise GatewayError("IDEMPOTENCY_CONFLICT")
+            self.store.database.execute("INSERT INTO account_metadata(key,value) VALUES (?,?)", (
+                receipt_key, self.store.seal_json({"conversationId": conversation_id, "title": title}, receipt_key),
+            ))
             self.store.database.execute(
                 "INSERT INTO conversations(conversation_id, client_conversation_id, title, created_at) VALUES (?, ?, ?, ?)",
                 (conversation_id, client_conversation_id, title, iso_millis(current)),

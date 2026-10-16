@@ -272,6 +272,7 @@ class GatewayHttpRoute:
 
     def failure_response(
         self, request_id: str | None, correlation_id: str | None, code: str,
+        details: Mapping[str, Any] | None = None,
     ) -> dict[str, Any]:
         request = {
             "verifiedRequest": {"context": {
@@ -279,7 +280,7 @@ class GatewayHttpRoute:
                 "correlationId": correlation_id or request_id or "open-android-intelligence-route",
             }},
         }
-        body = _failure(request, code)
+        body = _failure(request, code, details)
         return {"statusCode": _status(body), "headers": dict(_RESPONSE_HEADERS), "body": body}
 
     def handle_verified_request(self, verified: VerifiedGatewayRequest) -> dict[str, Any]:
