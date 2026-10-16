@@ -13,7 +13,7 @@ from test_conversation_rename import ACCOUNT_ID, _gateway
 
 
 @asynccontextmanager
-async def running_turn(tmp_path, store, defer_completion=False):
+async def running_turn(tmp_path, store, defer_completion=False, batched=False):
     from gateway.run_adapters import GatewayAdapterLifecycleMixin
     key = Ed25519PrivateKey.generate()
     core, bundle, cid, exposure = _gateway(tmp_path, key)
@@ -47,10 +47,14 @@ async def running_turn(tmp_path, store, defer_completion=False):
     base = f"http://127.0.0.1:{adapter._site._server.sockets[0].getsockname()[1]}"
     try:
         async with ClientSession() as client:
-            receipt = await _request(client, base, bundle, key, "POST", f"{PREFIX}/conversations/{cid}/messages",
-                {"clientMessageId": "cm_review", "text": "Work", "attachments": []}, "req_review")
+            body = {"clientBatchId": "cb_review", "joinMode": "newline-v1", "members": [
+                {"clientMessageId": "cm_review", "text": "Work"}, {"clientMessageId": "cm_review_second", "text": "More work"},
+            ]} if batched else {"clientMessageId": "cm_review", "text": "Work", "attachments": []}
+            resource = "message-batches" if batched else "messages"
+            receipt = await _request(client, base, bundle, key, "POST", f"{PREFIX}/conversations/{cid}/{resource}",
+                body, "req_review")
             await asyncio.wait_for(entered.wait(), 5)
-            yield SimpleNamespace(core=core, adapter=adapter, cid=cid, gid=receipt["data"]["message"]["generationId"],
+            yield SimpleNamespace(core=core, adapter=adapter, cid=cid, gid=(receipt["data"] if batched else receipt["data"]["message"])["generationId"],
                 client=client, base=base, bundle=bundle, key=key, callbacks=callbacks, complete=complete)
     finally:
         release.set()
@@ -88,10 +92,11 @@ def test_unrelated_async_deliveries_do_not_inherit_running_generation(native_sto
     asyncio.run(scenario())
 
 
+@pytest.mark.parametrize("batched", [False, True], ids=["single", "batch"])
 @pytest.mark.parametrize("defer_completion", [False, True], ids=["callback-before-cancel", "callback-after-cancel"])
-def test_cancel_closes_only_published_content_in_either_callback_order(native_store, tmp_path, monkeypatch, defer_completion):
+def test_cancel_closes_only_published_content_in_either_callback_order(native_store, tmp_path, monkeypatch, defer_completion, batched):
     async def scenario():
-        async with running_turn(tmp_path, native_store, defer_completion) as turn:
+        async with running_turn(tmp_path, native_store, defer_completion, batched) as turn:
             from open_android_intelligence_gateway.history_media import HistoryMedia
             # A later media lookup must not add content to a cancelled message's
             # finalization. Only the already published snapshot may be closed.
@@ -113,7 +118,15 @@ def test_cancel_closes_only_published_content_in_either_callback_order(native_st
             statuses = [e for e in events if e["eventType"] == "conversation.message.status"]
             assert statuses[-1]["payload"]["status"] == "failed"
             assert statuses[-1]["payload"]["generationId"] == turn.gid
-            assert len([e for e in statuses if e["payload"]["status"] == "failed"]) == 1
+            failed = [e for e in statuses if e["payload"]["status"] == "failed"]
+            assert len(failed) == (2 if batched else 1)
+            assert {e["payload"]["clientMessageId"] for e in failed} == ({"cm_review", "cm_review_second"} if batched else {"cm_review"})
+            assert all(e["payload"]["generationId"] == turn.gid and e["payload"]["errorCode"] == "AGENT_UNAVAILABLE" for e in failed)
+            assert all(events.index(finals[0]) < events.index(e) for e in failed)
+            before_replay = len(events)
+            assert await _request(turn.client, turn.base, turn.bundle, turn.key, "POST", target,
+                {"clientMessageId": "cm_cancel_review"}, "req_cancel_review") == receipt
+            assert len(_events(turn.core)) == before_replay
             assert turn.adapter._streaming_replies == {}
             account = turn.core.open_gateway_account(ACCOUNT_ID)
             try:
