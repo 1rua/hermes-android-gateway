@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+from copy import deepcopy
 import hashlib
 import json
 import logging
@@ -797,7 +798,7 @@ class OpenAndroidPlatformAdapter(BasePlatformAdapter):
         self._conversation_platforms: Dict[tuple[str, str], str] = {}
         # A turn can leave several progress messages open before the final
         # response. Only the host's processing-complete hook ends the turn.
-        self._streaming_replies: Dict[tuple[str, str, str], Dict[str, str]] = {}
+        self._streaming_replies: Dict[tuple[str, str, str], Dict[str, Dict[str, Any]]] = {}
 
     def set_message_handler(self, handler: Any) -> None:
         super().set_message_handler(handler)
@@ -1079,7 +1080,6 @@ class OpenAndroidPlatformAdapter(BasePlatformAdapter):
 
     async def send_document(self,chat_id,file_path,caption=None,file_name=None,reply_to=None,metadata=None,**kwargs):
         from .history_media import HistoryMedia
-        from .device_tools import resolve_origin
         account_id=(metadata.get("account_id") if isinstance(metadata,dict) else None) or self._conv_to_account.get(chat_id) or self._account_id
         if not account_id: return SendResult(success=False,error="ACCOUNT_NOT_CONFIGURED",retryable=False)
         account=self.services.core.open_gateway_account(account_id)
@@ -1096,7 +1096,7 @@ class OpenAndroidPlatformAdapter(BasePlatformAdapter):
             if generation:
                 payload["generationId"] = generation["generationId"]
             payload["parts"].extend(HistoryMedia(account).reply_parts(message_id))
-            origin=resolve_origin(self.services.core,"",account_id,chat_id)
+            origin=account.conversations.workflow._get("message-device:" + generation["messageIds"][0]) if generation else None
             visible_payload = dict(payload)
             if origin and origin.get("conversationId") == chat_id:
                 visible_payload["anchorClientMessageId"] = origin.get("clientMessageId")
@@ -1232,21 +1232,25 @@ class OpenAndroidPlatformAdapter(BasePlatformAdapter):
         account = self.services.core.open_gateway_account(target_account)
         try:
             generation = self._reply_generation(account, chat_id, generation_id)
+            tracked = self._streaming_replies.get((target_account, chat_id, generation_id), {}).get(message_id) if generation_id else None
+            closing_tracked = event_type == "conversation.message.completed" and tracked is not None and tracked["text"] == text
             if generation:
-                # A host callback which outlives cancellation/completion must
-                # never reopen a finished generation on the phone.
-                if generation["state"] in {"completed", "failed", "cancelled"}:
+                # A lifecycle callback may close an already published snapshot
+                # after cancellation settles. It cannot introduce new output.
+                if generation["state"] in {"completed", "failed", "cancelled"} and not closing_tracked:
                     return
                 payload["generationId"] = generation["generationId"]
             from .history_media import HistoryMedia
-            payload["parts"].extend(HistoryMedia(account).reply_parts(message_id))
+            if closing_tracked:
+                payload = deepcopy(tracked)
+            else:
+                payload["parts"].extend(HistoryMedia(account).reply_parts(message_id))
             if event_type == "conversation.message.completed":
                 try:
                     account.conversations.record_assistant_message(chat_id, message_id, text, occurred_at)
                 except Exception as rec_err:
                     logger.warning("[open_android] Failed to record completed message: %s", rec_err)
-            from .device_tools import resolve_origin
-            origin = resolve_origin(self.services.core,"",target_account,chat_id)
+            origin = account.conversations.workflow._get("message-device:" + generation["messageIds"][0]) if generation else None
             visible_payload = dict(payload)
             if origin and origin.get("conversationId") == chat_id:
                 visible_payload["anchorClientMessageId"] = origin.get("clientMessageId")
@@ -1262,7 +1266,7 @@ class OpenAndroidPlatformAdapter(BasePlatformAdapter):
             if generation:
                 key = (target_account, chat_id, generation["generationId"])
                 if event_type == "conversation.message.delta":
-                    self._streaming_replies.setdefault(key, {})[message_id] = text
+                    self._streaming_replies.setdefault(key, {})[message_id] = deepcopy(payload)
                 else:
                     pending = self._streaming_replies.get(key)
                     if pending is not None:
@@ -1273,33 +1277,25 @@ class OpenAndroidPlatformAdapter(BasePlatformAdapter):
             account.close()
 
     def _reply_generation(self, account: Any, chat_id: str, generation_id: str | None = None) -> Any:
-        from .device_tools import resolve_origin, trusted_turn
+        from .device_tools import trusted_turn
         workflow = account.conversations.workflow
         if generation_id:
-            return workflow._get("generation:" + generation_id)
-        origin = resolve_origin(self.services.core, "", account.account_id, chat_id)
-        if origin and origin.get("conversationId") == chat_id:
-            generation = workflow.for_message(origin.get("messageId", ""))
-            turn = trusted_turn.get()
-            in_turn = turn is not None and turn.get("core") is self.services.core and turn.get("messageId") == origin.get("messageId")
-            # Historical origin lookup can also serve independent notifications
-            # after a run. Only an actual captured turn can identify late output
-            # as belonging to an already finished generation.
-            if generation and (in_turn or generation["state"] in {"queued", "running", "unknown"}):
-                return generation
-        try:
-            current = workflow.current(chat_id)
-        except GatewayError as exc:
-            if exc.code != "SCHEMA_INVALID":
-                raise
+            generation = workflow._get("generation:" + generation_id)
+            if not generation or generation["conversationId"] != chat_id:
+                raise GatewayError("SCHEMA_INVALID")
+            return generation
+        turn = trusted_turn.get()
+        if (not turn or turn.get("core") is not self.services.core
+                or turn.get("accountId") != account.account_id or turn.get("conversationId") != chat_id):
             return None
-        return workflow._get("generation:" + current["generationId"]) if current else None
+        generation = workflow.for_message(turn.get("messageId", ""))
+        return generation if generation and generation["conversationId"] == chat_id else None
 
     async def _finish_streaming_replies(self, account_id: str, chat_id: str, generation_id: str) -> None:
-        pending = self._streaming_replies.pop((account_id, chat_id, generation_id), {})
-        for message_id, text in pending.items():
+        pending = dict(self._streaming_replies.get((account_id, chat_id, generation_id), {}))
+        for message_id, snapshot in pending.items():
             await self._publish_event(
-                "conversation.message.completed", chat_id, message_id, text,
+                "conversation.message.completed", chat_id, message_id, snapshot["text"],
                 account_id=account_id, generation_id=generation_id,
             )
 
@@ -2269,7 +2265,8 @@ class OpenAndroidPlatformAdapter(BasePlatformAdapter):
                 generation=account.conversations.workflow.for_message(record["messageId"])
                 if generation:
                     await self._finish_streaming_replies(account_id, record["conversationId"], generation["generationId"])
-                if generation and generation["state"]=="cancelled": return
+                if generation and generation["state"]=="cancelled":
+                    status, error_code = "failed", "AGENT_UNAVAILABLE"
                 if status=="completed" and record["status"]=="queued":
                     account.conversations.update_dispatch_status(record["messageId"],"delivered",None,f"agent-adopted-{record['messageId']}",claim_token=getattr(event,"_gateway_claim_token",None))
                 account.conversations.workflow.settle(record["messageId"],status)
