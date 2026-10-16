@@ -153,8 +153,11 @@ def test_aac_m4a_upload_reaches_real_native_audio_event_unchanged(native_store, 
     asyncio.run(scenario())
 
 
-@pytest.mark.parametrize("cancel", [False, True])
-def test_real_scoped_handler_finishes_whole_turn_and_closes_every_progress_message(native_store, tmp_path, cancel):
+@pytest.mark.parametrize("cancel_body", [None,
+    {"clientMessageId": "cm_native_cancel_identity"},
+    {"requestId": "req_cancel"},
+], ids=["complete", "canonical-cancel", "legacy-cancel"])
+def test_real_scoped_handler_finishes_whole_turn_and_closes_every_progress_message(native_store, tmp_path, cancel_body):
     from gateway.run_adapters import GatewayAdapterLifecycleMixin
 
     async def scenario():
@@ -208,10 +211,12 @@ def test_real_scoped_handler_finishes_whole_turn_and_closes_every_progress_messa
                 current = await _request(client, base, bundle, key, "GET", f"{PREFIX}/conversations/{cid}/generations/current", request_id="req_current")
                 assert current["data"]["generation"]["state"] == "running"
                 assert not any(e["payload"].get("status") in {"completed", "failed"} for e in _events(core))
-                if cancel:
+                if cancel_body is not None:
                     target = f"{PREFIX}/conversations/{cid}/generations/{gid}/cancel"
-                    result = await _request(client, base, bundle, key, "POST", target, {"requestId": "req_cancel"}, "req_cancel")
+                    result = await _request(client, base, bundle, key, "POST", target, cancel_body, "req_cancel")
                     assert result["data"]["outcome"] == "CANCELLED"
+                    replay = await _request(client, base, bundle, key, "POST", target, cancel_body, "req_cancel")
+                    assert replay["data"] == result["data"]
                     assert len(runner.interrupts) == 1
                     assert runner.interrupts[0][2]["invalidation_reason"] == "gateway_generation_cancel"
                     assert not adapter._session_tasks
@@ -226,7 +231,7 @@ def test_real_scoped_handler_finishes_whole_turn_and_closes_every_progress_messa
             completed = [e for e in events if e["eventType"] == "conversation.message.completed"]
             assert {"msg_plan", "msg_work", "msg_check"} <= {e["payload"]["messageId"] for e in completed}
             statuses = [e for e in events if e["eventType"] == "conversation.message.status"]
-            assert statuses[-1]["payload"]["status"] == ("failed" if cancel else "completed")
+            assert statuses[-1]["payload"]["status"] == ("failed" if cancel_body is not None else "completed")
             assert statuses[-1]["payload"]["generationId"] == gid
             terminal_index = events.index(statuses[-1])
             assert all(events.index(e) < terminal_index for e in completed)

@@ -2,6 +2,11 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from dataclasses import replace
+import hashlib
+import json
+
+import pytest
 
 from open_android_intelligence_gateway.core import create_gateway_core
 from test_support import make_secret_store, make_verified_request
@@ -70,7 +75,7 @@ def test_batch_handle_accepts_every_member_and_preserves_idempotent_receipt(tmp_
         account.close()
 
 
-def test_cancel_handle_returns_native_receipt_and_replays_once(tmp_path):
+def _running_generation(tmp_path):
     core, conversation_id = _core_and_conversation(tmp_path)
     account = core.open_gateway_account(ACCOUNT_ID)
     try:
@@ -83,6 +88,16 @@ def test_cancel_handle_returns_native_receipt_and_replays_once(tmp_path):
         account.conversations.claim_dispatch("cm_first", now=NOW)
     finally:
         account.close()
+    return core, conversation_id, receipt["generationId"]
+
+
+@pytest.mark.parametrize("body", [
+    {"clientMessageId": "cm_cancel_identity"},
+    {"clientMessageId": "x" * 128},
+    {"requestId": "req_cancel"},
+], ids=["canonical", "canonical-max-id", "legacy"])
+def test_cancel_handle_returns_native_receipt_and_replays_once(tmp_path, body):
+    core, conversation_id, generation_id = _running_generation(tmp_path)
     calls = []
 
     def cancel(account_id, cid, generation_id):
@@ -90,17 +105,70 @@ def test_cancel_handle_returns_native_receipt_and_replays_once(tmp_path):
         return "CANCELLED"
 
     core.generation_canceller = cancel
-    generation_id = receipt["generationId"]
     target = f"{PREFIX}/conversations/{conversation_id}/generations/{generation_id}/cancel"
-    request = _request("POST", target, {"requestId": "req_cancel"}, "req_cancel")
+    original_body = dict(body)
+    request = _request("POST", target, body, "req_cancel")
 
     response = core.handle(request)
 
     assert response.get("data") == {"outcome": "CANCELLED", "generationId": generation_id}, response
     assert core.handle(request) == response
     assert calls == [(ACCOUNT_ID, conversation_id, generation_id)]
+    assert body == original_body
+    account = core.open_gateway_account(ACCOUNT_ID)
+    try:
+        # Hash the original accepted body, including its original spelling and
+        # client identity. The route must never rewrite it into a legacy body.
+        expected_hash = hashlib.sha256(json.dumps({"method": "POST", "target": target, "body": original_body},
+            sort_keys=True, ensure_ascii=False, separators=(",", ":")).encode()).hexdigest()
+        saved = account.store.database.execute(
+            "SELECT input_hash FROM idempotency_ledger WHERE device_id=? AND request_id=?",
+            ("dev_boundary", "req_cancel"),
+        ).fetchone()
+        assert saved[0] == expected_hash
+    finally:
+        account.close()
+    # A different valid canonical body or a switch between accepted spellings
+    # still conflicts under the original authenticated request/idempotency ID.
+    for changed in ({"clientMessageId": "cm_changed_identity"},
+                    {"requestId": "req_cancel"} if "clientMessageId" in body else {"clientMessageId": "cm_cancel_identity"}):
+        conflict = core.handle(_request("POST", target, changed, "req_cancel"))
+        assert conflict["error"]["code"] == "IDEMPOTENCY_CONFLICT"
+    assert calls == [(ACCOUNT_ID, conversation_id, generation_id)]
     current = core.handle(_request("GET", f"{PREFIX}/conversations/{conversation_id}/generations/current"))
     assert current["data"]["generation"] is None
+
+
+@pytest.mark.parametrize("body", [
+    {}, None, [],
+    {"clientMessageId": ""}, {"clientMessageId": "bad id"}, {"clientMessageId": "x" * 129},
+    {"clientMessageId": None}, {"clientMessageId": 7}, {"clientMessageId": True},
+    {"clientMessageId": "cm_cancel", "requestId": "req_cancel"},
+    {"clientMessageId": "cm_cancel", "extra": None},
+    {"requestId": "req_other"}, {"requestId": "req_cancel", "extra": None},
+])
+def test_cancel_invalid_body_cannot_reach_host_or_change_running_generation(tmp_path, body):
+    core, conversation_id, generation_id = _running_generation(tmp_path)
+    calls = []
+    core.generation_canceller = lambda *args: calls.append(args) or "CANCELLED"
+    target = f"{PREFIX}/conversations/{conversation_id}/generations/{generation_id}/cancel"
+    rejected = core.handle(_request("POST", target, body, "req_cancel"))
+    assert rejected["error"]["code"] == "SCHEMA_INVALID"
+    assert calls == []
+    current = core.handle(_request("GET", f"{PREFIX}/conversations/{conversation_id}/generations/current"))
+    assert current["data"]["generation"]["state"] == "running"
+
+
+def test_cancel_still_requires_idempotency_key_to_match_authenticated_request(tmp_path):
+    core, conversation_id, generation_id = _running_generation(tmp_path)
+    calls = []
+    core.generation_canceller = lambda *args: calls.append(args) or "CANCELLED"
+    target = f"{PREFIX}/conversations/{conversation_id}/generations/{generation_id}/cancel"
+    request = _request("POST", target, {"clientMessageId": "cm_distinct_identity"}, "req_cancel")
+    request = replace(request, idempotency_key="cm_distinct_identity")
+    response = core.handle(request)
+    assert response["error"]["code"] == "IDEMPOTENCY_CONFLICT"
+    assert calls == []
 
 
 def test_snapshot_handle_uses_request_time_without_entering_rename_branch(tmp_path):
