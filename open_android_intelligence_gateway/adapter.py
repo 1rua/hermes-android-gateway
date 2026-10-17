@@ -799,11 +799,19 @@ class OpenAndroidPlatformAdapter(BasePlatformAdapter):
         # A turn can leave several progress messages open before the final
         # response. Only the host's processing-complete hook ends the turn.
         self._streaming_replies: Dict[tuple[str, str, str], Dict[str, Dict[str, Any]]] = {}
+        # Bind cancellation to the task admitted by the native lifecycle, never
+        # whichever task happens to occupy this session when /cancel arrives.
+        self._native_turns: Dict[tuple[str, str, str], tuple[str, asyncio.Task, Any]] = {}
+        self._generation_canceller: Any = None
 
     def set_message_handler(self, handler: Any) -> None:
         super().set_message_handler(handler)
         # Hosts may wire callbacks after connect or replace them on reconnect.
-        self.services.core.generation_canceller = self._native_generation_canceller()
+        self._refresh_generation_canceller()
+
+    def _refresh_generation_canceller(self) -> None:
+        self._generation_canceller = self._native_generation_canceller()
+        self.services.core.generation_canceller = self._generation_canceller
 
     def _host_runner(self) -> Any:
         runner = getattr(self, "gateway_runner", None)
@@ -839,41 +847,75 @@ class OpenAndroidPlatformAdapter(BasePlatformAdapter):
             core.history_reader = HermesHistoryPort(core, session_store).read
 
     def _native_generation_canceller(self) -> Any:
-        runner=self._host_runner()
-        interrupt=getattr(runner,"_interrupt_and_clear_session",None)
-        if not callable(interrupt) or not callable(getattr(self,"cancel_session_processing",None)): return None
-        def cancel(account_id: str,conversation_id: str,generation_id: str) -> str:
-            loop=self._loop
-            if loop is None or loop.is_closed(): return "OUTCOME_UNKNOWN"
-            async def stop() -> str:
-                source=self._agent_source(conversation_id,account_id)
-                account=self.services.core.open_gateway_account(account_id)
-                try:
-                    binding=account.agent_sessions.lookup(conversation_id)
-                finally: account.close()
-                session_key=(binding or {}).get("sessionKey")
-                if not session_key:
-                    store=getattr(self,"_session_store",None)
-                    if store is None: return "OUTCOME_UNKNOWN"
-                    session_key=self._host_session_key(store,source)
-                task=getattr(self,"_session_tasks",{}).get(session_key)
-                if task is None or task.done():
-                    account=self.services.core.open_gateway_account(account_id)
-                    try:
-                        generation=account.conversations.workflow._get("generation:"+generation_id)
-                        return "ALREADY_COMPLETED" if generation and generation["state"] in {"completed","failed"} else "OUTCOME_UNKNOWN"
-                    finally: account.close()
-                # Use the same hard interrupt/run invalidation path as Hermes /stop.
-                await interrupt(session_key,source,interrupt_reason="Gateway generation cancelled",invalidation_reason="gateway_generation_cancel")
-                await self.cancel_session_processing(session_key)
-                if not task.done():
+        if (not getattr(self, "_message_handler", None)
+                or not callable(getattr(self._host_runner(), "_interrupt_and_clear_session", None))
+                or not callable(getattr(self, "cancel_session_processing", None))
+                or self._loop is None or self._loop.is_closed()):
+            return None
+
+        def cancel(account_id: str, conversation_id: str, generation_id: str) -> str:
+            loop = self._loop
+            if loop is None or loop.is_closed() or not loop.is_running():
+                return "OUTCOME_UNKNOWN"
+            # This synchronous bridge is called by the HTTP worker. Waiting on
+            # our own event loop would deadlock it, including native completion.
+            with suppress(RuntimeError):
+                if asyncio.get_running_loop() is loop:
                     return "OUTCOME_UNKNOWN"
+
+            async def stop() -> str:
+                interrupt = getattr(self._host_runner(), "_interrupt_and_clear_session", None)
+                if not self._message_handler or not callable(interrupt):
+                    return "UNSUPPORTED"
+                account = self.services.core.open_gateway_account(account_id)
+                try:
+                    generation = account.conversations.workflow._get("generation:" + generation_id)
+                    if not generation or generation["conversationId"] != conversation_id:
+                        return "OUTCOME_UNKNOWN"
+                    if generation["state"] in {"completed", "failed"}:
+                        return "ALREADY_COMPLETED"
+                finally:
+                    account.close()
+                turn = self._native_turns.get((account_id, conversation_id, generation_id))
+                if turn is None:
+                    return "OUTCOME_UNKNOWN"
+                session_key, task, source = turn
+
+                def settled_outcome() -> str:
+                    if task.cancelled():
+                        return "CANCELLED"
+                    account = self.services.core.open_gateway_account(account_id)
+                    try:
+                        generation = account.conversations.workflow._get("generation:" + generation_id)
+                        return "ALREADY_COMPLETED" if generation and generation["state"] in {"completed", "failed"} else "OUTCOME_UNKNOWN"
+                    finally:
+                        account.close()
+
+                if task.done():
+                    return settled_outcome()
+                if self._session_tasks.get(session_key) is not task:
+                    return "OUTCOME_UNKNOWN"
+                # Use the same hard interrupt/run invalidation path as Hermes /stop.
+                await interrupt(session_key, source, interrupt_reason="Gateway generation cancelled",
+                    invalidation_reason="gateway_generation_cancel")
+                # The native interrupt yields. A completed turn may already have
+                # handed this session to a successor; never cancel that task.
+                if not task.done() and self._session_tasks.get(session_key) is task:
+                    await self.cancel_session_processing(session_key)
+                outcome = settled_outcome()
+                if outcome != "CANCELLED":
+                    return outcome
                 # A host may defer its completion callback. Close the content
                 # already shown to clients before Core publishes terminal
                 # dispatch statuses, without waiting for that callback.
                 await self._finish_streaming_replies(account_id, conversation_id, generation_id)
                 return "CANCELLED"
-            future=asyncio.run_coroutine_threadsafe(stop(),loop)
+            coroutine = stop()
+            try:
+                future = asyncio.run_coroutine_threadsafe(coroutine, loop)
+            except RuntimeError:
+                coroutine.close()
+                return "OUTCOME_UNKNOWN"
             try: return future.result(timeout=12)
             except Exception:
                 future.cancel()
@@ -928,7 +970,7 @@ class OpenAndroidPlatformAdapter(BasePlatformAdapter):
         # decision can actually reach the Agent thread waiting on it (§7.2).
         if core is not None:
             core.approval_resolver = self._host_approval_resolver()
-            core.generation_canceller = self._native_generation_canceller()
+            self._refresh_generation_canceller()
             from .host_history import HermesHistoryPort
             session_store = getattr(self, "_session_store", None)
             # 宿主历史只在原生会话储存已接入时提供，独立传输仍由 Core 短期队列负责。
@@ -980,6 +1022,8 @@ class OpenAndroidPlatformAdapter(BasePlatformAdapter):
             if callable(unregister_sink):
                 unregister_sink(self._event_sink)
             self._loop = None
+            if core.generation_canceller is self._generation_canceller:
+                core.generation_canceller = None
             return False
 
     async def disconnect(self) -> None:
@@ -999,6 +1043,9 @@ class OpenAndroidPlatformAdapter(BasePlatformAdapter):
         if callable(unregister_sink):
             unregister_sink(self._event_sink)
         self._loop = None
+        core = self.services.core
+        if core.generation_canceller is self._generation_canceller:
+            core.generation_canceller = None
         if self._runner:
             try:
                 await self._runner.cleanup()
@@ -2263,6 +2310,33 @@ class OpenAndroidPlatformAdapter(BasePlatformAdapter):
                     path.unlink(missing_ok=True)
             except OSError as exc:
                 logger.warning("[open_android] Cached media cleanup failed errorCode=INTERNAL_ERROR")
+
+    async def on_processing_start(self, event: Any) -> None:
+        """Capture native admission before the host callback starts running."""
+        source = getattr(event, "source", None)
+        account_id = str(getattr(source, "user_id", "") or "")
+        client_id = str(getattr(event, "message_id", "") or "")
+        task = asyncio.current_task()
+        if not account_id or not client_id or task is None:
+            return
+        account = self.services.core.open_gateway_account(account_id)
+        try:
+            record = account.conversations.dispatch_message(client_id)
+            generation = account.conversations.workflow.for_message(record["messageId"]) if record else None
+            if not generation:
+                return
+            key = (account_id, record["conversationId"], generation["generationId"])
+            session_key = next((key for key, owner in self._session_tasks.items() if owner is task), None)
+            if session_key is None:
+                return
+            self._native_turns[key] = (session_key, task, source)
+            def release(done: asyncio.Task) -> None:
+                turn = self._native_turns.get(key)
+                if turn is not None and turn[1] is done:
+                    self._native_turns.pop(key, None)
+            task.add_done_callback(release)
+        finally:
+            account.close()
 
     async def on_processing_complete(self, event: Any, outcome: Any) -> None:
         """按宿主异步完成回调契约结算 Gateway 投递状态。"""

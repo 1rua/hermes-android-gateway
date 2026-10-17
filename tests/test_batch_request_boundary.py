@@ -91,6 +91,17 @@ def _running_generation(tmp_path):
     return core, conversation_id, receipt["generationId"]
 
 
+def test_native_handler_disappearing_after_negotiation_does_not_pause_running_generation(tmp_path):
+    core, conversation_id, generation_id = _running_generation(tmp_path)
+    core.generation_canceller = lambda *args: "UNSUPPORTED"
+    result = core.handle(_request("POST",
+        f"{PREFIX}/conversations/{conversation_id}/generations/{generation_id}/cancel",
+        {"clientMessageId": "cm_cancel_detached"}, "req_cancel_detached"))
+    assert result["data"]["outcome"] == "UNSUPPORTED"
+    current = core.handle(_request("GET", f"{PREFIX}/conversations/{conversation_id}/generations/current"))
+    assert current["data"]["generation"]["state"] == "running"
+
+
 @pytest.mark.parametrize("body", [
     {"clientMessageId": "cm_cancel_identity"},
     {"clientMessageId": "x" * 128},

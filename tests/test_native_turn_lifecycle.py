@@ -53,6 +53,49 @@ def _events(core):
         account.close()
 
 
+def test_signed_cancel_reaches_native_task_through_real_scoped_handler(native_store, tmp_path):
+    """The catalog's old 9d642b4 release returned UNSUPPORTED for this callback."""
+    from gateway.run_adapters import GatewayAdapterLifecycleMixin
+    async def scenario():
+        key = Ed25519PrivateKey.generate()
+        core, bundle, cid, exposure = _gateway(tmp_path, key)
+        adapter = _adapter(core, exposure)
+        adapter.set_session_store(native_store)
+        entered, release = asyncio.Event(), asyncio.Event()
+        interrupts = []
+        class Runner(GatewayAdapterLifecycleMixin):
+            def _standalone_launch_scope(self):
+                return nullcontext()
+            async def handle(self, event):
+                entered.set()
+                await release.wait()
+            async def _interrupt_and_clear_session(self, session_key, source, **kwargs):
+                interrupts.append((session_key, source.chat_id))
+        runner = Runner()
+        adapter.set_message_handler(runner._standalone_scoped(runner.handle))
+        assert await adapter.connect()
+        base = f"http://127.0.0.1:{adapter._site._server.sockets[0].getsockname()[1]}"
+        try:
+            async with ClientSession() as client:
+                receipt = await _request(client, base, bundle, key, "POST", f"{PREFIX}/conversations/{cid}/messages",
+                    {"clientMessageId": "cm_stop_wrapper", "text": "Work", "attachments": []}, "req_stop_work")
+                gid = receipt["data"]["message"]["generationId"]
+                await asyncio.wait_for(entered.wait(), 5)
+                result = await _request(client, base, bundle, key, "POST",
+                    f"{PREFIX}/conversations/{cid}/generations/{gid}/cancel",
+                    {"requestId": "req_stop_wrapper"}, "req_stop_wrapper")
+                assert result["data"]["outcome"] == "CANCELLED"
+                assert len(interrupts) == 1 and interrupts[0][1] == cid
+                assert not adapter._session_tasks
+        finally:
+            release.set()
+            async with asyncio.timeout(5):
+                while adapter._session_tasks:
+                    await asyncio.sleep(0.01)
+            await adapter.disconnect()
+    asyncio.run(scenario())
+
+
 def test_post_creates_distinct_empty_host_sessions_without_new_and_retry_reuses(native_store, tmp_path):
     async def scenario():
         key = Ed25519PrivateKey.generate()
