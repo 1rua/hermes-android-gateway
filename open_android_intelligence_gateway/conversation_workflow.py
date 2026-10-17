@@ -158,10 +158,20 @@ class ConversationWorkflow:
                 return "CANCELLED"
             if cancel is None: return "UNSUPPORTED"
             # Pause this thread before crossing the native cancellation boundary.
+            previous_state = generation["state"]
             generation["state"] = "unknown"
             self._put("generation:" + generation_id, generation)
         try:
-            return cancel(conversation_id, generation_id)
+            outcome = cancel(conversation_id, generation_id)
+            if outcome == "UNSUPPORTED":
+                # A handler can be detached after capability negotiation. No
+                # interrupt was sent; preserve any racing terminal callback.
+                with self.store.transaction():
+                    current = self._get("generation:" + generation_id)
+                    if current and current["state"] == "unknown":
+                        current["state"] = previous_state
+                        self._put("generation:" + generation_id, current)
+            return outcome
         except Exception:
             return "OUTCOME_UNKNOWN"
 

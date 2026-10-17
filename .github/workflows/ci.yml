@@ -67,6 +67,7 @@ jobs:
             tests/test_native_streaming_delivery.py \
             tests/test_native_turn_lifecycle.py \
             tests/test_native_turn_review_boundaries.py \
+            tests/test_host_command_catalog.py \
             tests/test_native_binding_http_failures.py \
             tests/test_legacy_conversation_canonical.py \
             tests/test_android_echo_fixture.py

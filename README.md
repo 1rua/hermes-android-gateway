@@ -4,9 +4,9 @@
 Hermes Agent 宿主，通过一条经过认证的本地通道承载对话、通知、短信、设备请求与
 附件传输。
 
-本轮插件发行版本为 `2.1.1`，协议版本仍为 `2.1.0`。附件完成事件的核心 Schema
-已经变化，App 和插件必须使用相同核心摘要同步升级。当前版本同时修复了宿主作用域
-回调下的取消能力识别、整轮生成结束收口、直接创建独立会话及运行时命令目录。
+本轮插件发行版本为 `2.1.2`，与 `2.1.1` 共用协议 `2.1.0` 和核心 Schema 摘要。
+停止生成沿用 Hermes 原生硬中断及任务取消路径，并绑定当前生成，避免误停后继任务。
+命令目录读取当前宿主注册表、别名、插件和技能，按 Android 平台过滤技能。
 
 ## 安装
 
@@ -35,6 +35,15 @@ hermes gateway restart        # 更新后需重启进程才会加载新代码
 ```bash
 hermes plugins install 1rua/hermes-gateway-plugin --ref <40位提交SHA>
 ```
+
+若旧安装锁定了目录中的 `9d642b4`，普通更新仍会保留该锁定。用修复提交显式替换后重启：
+
+```bash
+hermes plugins install 1rua/hermes-gateway-plugin --force --ref <修复提交的40位SHA> --enable
+hermes gateway restart
+```
+
+旧锁定版本返回 `/models` 等固定目录，且无法从宿主包装回调识别原生停止入口。
 
 ## 协议契约
 
@@ -104,10 +113,14 @@ session；相同客户端身份携带不同创建参数返回 `IDEMPOTENCY_CONFL
 `conversation.message.completed` 只表示一条助手消息完成，工具进度和最终答复可处于
 同一轮生成。整轮由原生 `on_processing_complete` 收口所有未完成进度消息，再发送
 带 `generationId` 的用户消息 `completed` / `failed` 状态；取消使用宿主的硬中断和
-原生处理任务取消路径。无法接入宿主取消桥接时不声明 `generation-cancel-v1`。
+原生处理任务取消路径。运行中的生成只有确认其原生任务已经取消才返回 `CANCELLED`；
+正常完成返回 `ALREADY_COMPLETED`，超时保留 `OUTCOME_UNKNOWN`。无法接入宿主取消桥接时
+不声明 `generation-cancel-v1`，回调移除或断线后撤销该能力。
 
 `GET /v2/commands` 每次从当前 Hermes 命令注册表、可用插件命令及启用的技能读取，
-不再返回手机专用的固定命令清单。录音附件支持 `.m4a` / `audio/mp4`，按原始字节
+技能采用与 Telegram 相同的宿主发现来源，按 Android 的禁用配置过滤，不继承 Telegram
+菜单的数量或名称截断限制。目录内容变化时 `catalogVersion` 自动变化；宿主发现出错时
+请求明确失败，不回填固定命令。录音附件支持 `.m4a` / `audio/mp4`，按原始字节
 进入宿主 `AUDIO` 消息，由宿主完成处理。
 
 ## 配置
