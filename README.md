@@ -4,7 +4,12 @@
 Hermes Agent 宿主，通过一条经过认证的本地通道承载对话、通知、短信、设备请求与
 附件传输。
 
-本轮插件发行版本为 `2.1.2`，与 `2.1.1` 共用协议 `2.1.0` 和核心 Schema 摘要。
+本轮插件版本为 `2.2.0`，协议版本保持 `2.1.0`，新增 `conversation-management-v1`。
+配套 APK 需来自应用仓库提交
+[`f0b3f1bd4f6f3301b820e38c9f3241bcac05cd10`](https://github.com/1rua/open-android-intelligence/commit/f0b3f1bd4f6f3301b820e38c9f3241bcac05cd10)
+或使用同一契约的后续版本；本次核心 Schema 摘要已更新，升级时须同时更新插件与 APK。
+完整历史分页、共享文件夹与排序、原生归档/恢复/删除均已通过固定 Hermes SDK 的原生回归测试。
+Android 真机闭环需在实际部署中另行验收。
 停止生成沿用 Hermes 原生硬中断及任务取消路径，并绑定当前生成，避免误停后继任务。
 命令目录读取当前宿主注册表、别名、插件和技能，按 Android 平台过滤技能。
 
@@ -27,8 +32,11 @@ hermes open-android-intelligence status
 
 ```bash
 hermes plugins update open-android-intelligence-gateway
+hermes open-android-intelligence contract sync
 hermes gateway restart        # 更新后需重启进程才会加载新代码
 ```
+
+随后安装上述配套 APK 并重新连接账号。旧版 APK 使用的核心摘要不同，不能与本版插件混用。
 
 未指定 `--ref` 时安装的是仓库当前分支的最新提交。需要锁定到某个不可变版本时：
 
@@ -36,14 +44,13 @@ hermes gateway restart        # 更新后需重启进程才会加载新代码
 hermes plugins install 1rua/hermes-gateway-plugin --ref <40位提交SHA>
 ```
 
-若旧安装锁定了目录中的 `9d642b4`，普通更新仍会保留该锁定。用修复提交显式替换后重启：
+若旧安装锁定了提交，普通更新仍会保留该锁定。选取本仓库已发布且包含 `2.2.0` 的完整提交，显式替换后同步契约、重启：
 
 ```bash
-hermes plugins install 1rua/hermes-gateway-plugin --force --ref <修复提交的40位SHA> --enable
+hermes plugins install 1rua/hermes-gateway-plugin --force --ref <已发布提交的40位SHA> --enable
+hermes open-android-intelligence contract sync
 hermes gateway restart
 ```
-
-旧锁定版本返回 `/models` 等固定目录，且无法从宿主包装回调识别原生停止入口。
 
 ## 协议契约
 
@@ -54,12 +61,13 @@ hermes gateway restart
 ```json
 {
   "repository": "https://github.com/1rua/open-android-intelligence.git",
-  "revision": "4dd825ad3ae6ad20019ff38f6ff5c4f1a8708394"
+  "revision": "f0b3f1bd4f6f3301b820e38c9f3241bcac05cd10"
 }
 ```
 
-插件在加载时按该提交把 `gateway-contract/` 取到本插件目录下（只检出这一棵子树，
-不会拉取整个应用仓库）。这样契约只有一份真源，既不会与手机端漂移，也不必手工
+`setup`、账号创建或显式 `contract sync` 按该提交把 `gateway-contract/` 取到本插件目录下
+（只检出这一棵子树，不会拉取整个应用仓库）。宿主加载只读取已就绪的本地契约。
+这样契约只有一份真源，既不会与手机端漂移，也不必手工
 同步副本。
 
 随时可查看与修复：
@@ -99,12 +107,23 @@ export OPEN_ANDROID_GATEWAY_CONTRACT_ROOT=/secure/path/gateway-contract
 流式读取 content。响应携带明确的格式、媒体类型、原始长度和摘要；大于旧 25 MiB
 门槛的文件按 64 KiB 块读取。无格式参数保留有界 JSON/Base64 响应。
 
-契约固定在 `4dd825ad3ae6ad20019ff38f6ff5c4f1a8708394`，核心摘要为
-`sha256:59244afa522108614123e4d047a8ff51f6f2e2651e9b800bb8c63e5e6e82d320`。
+契约固定在 `f0b3f1bd4f6f3301b820e38c9f3241bcac05cd10`，核心摘要为
+`sha256:032f580246eb4a214624bded717819b4d5a76191208207edc9e5a4607f5c4d23`。
 旧响应表示兼容仅适用于同一核心摘要；只升级 App 或插件一端会被
 `PROTOCOL_INCOMPATIBLE` 拒绝登录。
 
 ## 会话、生成与命令
+
+协商到 `conversation-management-v1` 后，手机可分页读取当前 Gateway 账号完整历史，
+包括已归档会话；共享文件夹、归属和自定义顺序由账号内的乐观版本控制管理，多设备共用。
+只操作已有可信原生绑定的会话，不导入其它本地 Agent 聊天。
+
+归档与恢复调用 Hermes 原生会话存储；删除覆盖该会话的压缩链、原生消息与展示 KV，
+并移除原生路由。运行或排队中的会话返回 `CONVERSATION_BUSY`。
+删除屏障阻止旧请求、历史与附件入口重新建立已删除会话。
+原生操作已完成但回执写入失败时，持久 pending 屏障在重启后继续有效；必须用同一设备的
+相同请求 ID、操作和参数重试，以恢复真实原生回执。结果未确认时返回 `OUTCOME_UNKNOWN`。
+升级前创建且未带标题元数据的旧会话也可以删除。
 
 手机直接调用 `POST /v2/conversations` 创建空会话，宿主为其分配独立的原生 Agent
 session，不向旧会话发送 `/new`。同一 `clientConversationId` 的网络重试复用会话及
@@ -173,18 +192,42 @@ python3 tools/hermes-account.py contract
 ## 开发与测试
 
 ```bash
-python3 -m venv .venv && .venv/bin/pip install pytest jsonschema aiohttp cryptography
+python3 -m venv .venv
+.venv/bin/pip install pytest jsonschema aiohttp cryptography \
+  PyYAML==6.0.3 httpx==0.28.1 python-dotenv==1.2.4 psutil==7.2.2
 ```
 
-测试需要真实协议契约（协商测试计算的是真实 Schema 摘要，不使用替身）。二选一：
+测试需要真实协议契约（协商测试计算的是真实 Schema 摘要，不使用替身）。可设置
+`OPEN_ANDROID_GATEWAY_CONTRACT_ROOT=/path/to/gateway-contract`，或先通过
+`hermes open-android-intelligence contract sync` 按 pin 获取。standalone 与 native 必须分进程：
 
 ```bash
-# 指向已有的契约目录
-OPEN_ANDROID_GATEWAY_CONTRACT_ROOT=/path/to/gateway-contract .venv/bin/python -m pytest tests
+# 不加载 SDK，排除真正依赖原生宿主的测试组
+env -u HERMES_SDK_ROOT -u PYTHONPATH .venv/bin/python -m pytest tests \
+  --ignore=tests/test_native_history_complete.py \
+  --ignore=tests/test_native_history_projection.py \
+  --ignore=tests/test_native_streaming_delivery.py \
+  --ignore=tests/test_native_turn_lifecycle.py \
+  --ignore=tests/test_native_turn_review_boundaries.py \
+  --ignore=tests/test_native_binding_http_failures.py \
+  --ignore=tests/test_conversation_management.py \
+  --ignore=tests/test_host_command_catalog.py \
+  --ignore=tests/test_android_echo_fixture.py
 
-# 或让插件按 pin 自动获取
-.venv/bin/python -m pytest tests
+# SDK 固定在 75b083e9399115b12513385252811f09c3503c90；安装 CI 中的原生依赖后运行
+HERMES_SDK_ROOT=/path/to/hermes-agent PYTHONPATH=/path/to/hermes-agent \
+  OAI_REQUIRE_NATIVE_HERMES=1 .venv/bin/python -m pytest \
+  tests/test_native_history_complete.py tests/test_native_history_projection.py \
+  tests/test_native_streaming_delivery.py tests/test_native_turn_lifecycle.py \
+  tests/test_native_turn_review_boundaries.py tests/test_conversation_management.py \
+  tests/test_host_command_catalog.py tests/test_native_binding_http_failures.py \
+  tests/test_legacy_conversation_canonical.py tests/test_android_echo_fixture.py
+
+.venv/bin/python scripts/check_plugin_manifest.py
 ```
+
+CI 使用 Python 3.11，并为两个进程分别设置临时 `HERMES_HOME` 和
+`HERMES_TEST_ISOLATION`。本地测试也应设置独立临时目录，避免访问日常 Hermes 数据。
 
 提交前建议跑一次官方校验：
 

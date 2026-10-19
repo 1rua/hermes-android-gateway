@@ -45,17 +45,22 @@ jobs:
 
       # The negotiation tests compare the real shipped Schema digest, so the
       # suite runs against the contract this plugin actually pins.
-      - name: Run tests
+      - name: Run standalone tests without loading the native SDK
         run: |
-          python -m pytest tests \
+          env -u HERMES_SDK_ROOT -u PYTHONPATH python -m pytest tests \
             --ignore=tests/test_native_history_complete.py \
             --ignore=tests/test_native_history_projection.py \
-            --ignore=tests/test_native_streaming_delivery.py
+            --ignore=tests/test_native_streaming_delivery.py \
+            --ignore=tests/test_native_turn_lifecycle.py \
+            --ignore=tests/test_native_turn_review_boundaries.py \
+            --ignore=tests/test_native_binding_http_failures.py \
+            --ignore=tests/test_conversation_management.py \
+            --ignore=tests/test_host_command_catalog.py \
+            --ignore=tests/test_android_echo_fixture.py
         env:
           OPEN_ANDROID_GATEWAY_CONTRACT_ROOT: ${{ github.workspace }}/.contract-source/gateway-contract
-          HERMES_SDK_ROOT: ${{ github.workspace }}/.hermes-native-sdk
-          HERMES_HOME: ${{ runner.temp }}/oai-native-hermes-ci
-          HERMES_TEST_ISOLATION: ${{ runner.temp }}/oai-native-hermes-ci
+          HERMES_HOME: ${{ runner.temp }}/oai-standalone-hermes-ci
+          HERMES_TEST_ISOLATION: ${{ runner.temp }}/oai-standalone-hermes-ci
 
       - name: Verify the real Hermes native history and transports
         # 正常矩阵约数十秒；停滞时保留具体用例与调用栈，避免无限占用流水线。
@@ -67,6 +72,7 @@ jobs:
             tests/test_native_streaming_delivery.py \
             tests/test_native_turn_lifecycle.py \
             tests/test_native_turn_review_boundaries.py \
+            tests/test_conversation_management.py \
             tests/test_host_command_catalog.py \
             tests/test_native_binding_http_failures.py \
             tests/test_legacy_conversation_canonical.py \

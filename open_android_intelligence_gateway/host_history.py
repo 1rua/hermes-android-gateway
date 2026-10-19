@@ -10,6 +10,7 @@ import json
 import re
 from datetime import datetime, timezone, timedelta
 import threading
+from contextlib import nullcontext
 from typing import Any, Mapping
 from .history_media import HistoryMedia
 
@@ -73,6 +74,86 @@ class HermesHistoryPort:
         self.storage_owner = hashlib.sha256(str(core.storage_root.resolve()).encode()).hexdigest()
         self.started_at = datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
         self._migration_lock = threading.RLock()
+
+    def _bound_database(self, binding: Mapping[str, Any]) -> Any:
+        session_id = binding.get("agentSessionId")
+        key = binding.get("sessionKey")
+        resolve_key = getattr(self.session_store, "_db_for_key", None)
+        resolve_id = getattr(self.session_store, "_db_for_session_id", None)
+        database = (resolve_key(key) if key and callable(resolve_key) else
+                    resolve_id(session_id) if callable(resolve_id) else getattr(self.session_store, "_db", None))
+        if database is None or not callable(getattr(database, "get_session", None)):
+            from .core import GatewayError
+            raise GatewayError("HOST_INCOMPATIBLE")
+        return database
+
+    def conversation_state(self, account_id: str, conversation_id: str, store: Any) -> dict[str, Any] | None:
+        """Consult the account's stored binding; never enumerate another user's native chats."""
+        from .core import AgentSessionBindings, iso_millis
+        binding = AgentSessionBindings(store).lookup(conversation_id)
+        if not binding or not binding.get("agentSessionId"):
+            return None
+        database = self._bound_database(binding)
+        row = database.get_session(binding["agentSessionId"])
+        if row is None:
+            return {"deleted": True}
+        chain = self._session_chain(database, binding["agentSessionId"])
+        tip = database.get_session(chain[-1]) or row
+        times = [value for value in (tip.get("started_at"), tip.get("ended_at")) if isinstance(value, (int, float))]
+        messages = database.get_messages(chain[-1], include_inactive=True)
+        times.extend(item["timestamp"] for item in messages if isinstance(item.get("timestamp"), (int, float)))
+        return {"archived": bool(tip.get("archived")),
+                **({"updatedAt": iso_millis(datetime.fromtimestamp(max(times), timezone.utc))} if times else {})}
+
+    def manage(self, account_id: str, conversation_id: str, operation: str, archived: bool | None = None) -> None:
+        """Use SessionDB lifecycle APIs, including every compression segment on delete.
+
+        The gateway operation fence is durable before entry. The store routing lock
+        closes admission while native records and their live route are removed.
+        Active native work is refused before any transcript mutation.
+        """
+        from .core import GatewayError
+        account = self.core.open_gateway_account(account_id)
+        try:
+            binding = account.agent_sessions.lookup(conversation_id)
+            if not binding or not binding.get("agentSessionId"):
+                raise GatewayError("HOST_INCOMPATIBLE")
+            database = self._bound_database(binding)
+            setter = getattr(database, "set_session_archived", None)
+            delete = getattr(database, "delete_sessions", None)
+            if not callable(setter) or not callable(delete):
+                raise GatewayError("HOST_INCOMPATIBLE")
+            key = binding.get("sessionKey")
+            store_lock = getattr(self.session_store, "_lock", None)
+            with self._migration_lock, (store_lock if store_lock is not None else nullcontext()):
+                entry = getattr(self.session_store, "_entries", {}).get(key)
+                busy = getattr(self.session_store, "_has_active_processes_safe", None)
+                if (getattr(entry, "active_turn_token", None)
+                        or key and callable(busy) and busy(key, context="oai-conversation-management")):
+                    raise GatewayError("CONVERSATION_BUSY")
+                session_id = binding["agentSessionId"]
+                exists = database.get_session(session_id) is not None
+                chain = self._session_chain(database, session_id) if exists else []
+                if exists and entry is not None and entry.session_id not in chain:
+                    # A real reset is a different conversation, not a compression child.
+                    raise GatewayError("HOST_INCOMPATIBLE")
+                if operation == "archive":
+                    if exists and all(bool(database.get_session(value).get("archived")) == archived for value in chain):
+                        return
+                    if not exists or setter(session_id, archived) is not True:
+                        raise GatewayError("HOST_INCOMPATIBLE")
+                else:
+                    if chain:
+                        delete(chain, sessions_dir=getattr(self.session_store, "sessions_dir", None))
+                    # Presentation KV is native long-lived content too.
+                    keys = [name for name, _ in database.list_meta_prefix(self._presentation_prefix(account_id, conversation_id))]
+                    if keys:
+                        database._execute_write(lambda conn: conn.executemany("DELETE FROM state_meta WHERE key=?", [(name,) for name in keys]))
+                    if entry is not None:
+                        self.session_store._entries.pop(key, None)
+                        self.session_store._save()
+        finally:
+            account.close()
 
     def _database(self, session_id: str, native_session_key: str | None = None) -> Any:
         # 压缩会推进路由，旧会话 ID 不能再用于猜测所属 profile 的数据库。
@@ -299,6 +380,7 @@ class HermesHistoryPort:
     def read(self, account_id: str, conversation_id: str) -> list[dict[str, Any]]:
         account = self.core.open_gateway_account(account_id)
         try:
+            account.conversations.management.require_visible(conversation_id)
             binding = account.agent_sessions.lookup(conversation_id)
             if not binding or not binding.get("agentSessionId"):
                 return []
@@ -430,6 +512,8 @@ class HermesHistoryPort:
             saved = account.store.database.execute("SELECT value FROM account_metadata WHERE key='native-history-maintenance-offset'").fetchone()
             offset = int(saved[0]) if saved else 0
             conversations = account.store.database.execute("SELECT conversation_id FROM conversation_agent_sessions WHERE agent_session_id IS NOT NULL ORDER BY conversation_id LIMIT 10 OFFSET ?", (offset,)).fetchall()
+            page_size = len(conversations)
+            conversations = [row for row in conversations if not account.conversations.management.state(row[0]).get("deleted")]
         finally:
             account.close()
 
@@ -437,7 +521,7 @@ class HermesHistoryPort:
             self.read(account_id, row[0])
         account = self.core.open_gateway_account(account_id)
         try:
-            next_offset = offset + len(conversations) if len(conversations) == 10 else 0
+            next_offset = offset + page_size if page_size == 10 else 0
             account.store.database.execute("INSERT OR REPLACE INTO account_metadata(key,value) VALUES ('native-history-maintenance-offset',?)", (str(next_offset),))
             from .core import iso_millis
             cutoff = iso_millis((now or datetime.now(timezone.utc)) - timedelta(seconds=self.core.attachment_policy.attachment_ttl_seconds))
