@@ -45,7 +45,7 @@ CONTRACT_SETUP_HINT = "协议契约未获取：请执行 hermes open-android-int
 
 HERMES_PLUGIN_MANIFEST = {
     "id": "open-android-intelligence-gateway",
-    "version": "2.1.2",
+    "version": "2.2.0",
     "backend": "hermes",
     "protocolVersion": "2.1.0",
     "hostApi": {

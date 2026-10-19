@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import sys
+import tomllib
 from pathlib import Path
 
 import yaml
@@ -45,6 +46,12 @@ def main() -> int:
         register,
         verify_manifest_protocol,
     )
+
+    package = tomllib.loads((PLUGIN_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    versions = {manifest["version"], HERMES_PLUGIN_MANIFEST["version"], package["project"]["version"]}
+    if len(versions) != 1:
+        print("plugin.yaml, Python manifest and pyproject.toml versions must match")
+        return 1
 
     if not callable(register):
         print("the plugin package does not export register(ctx)")

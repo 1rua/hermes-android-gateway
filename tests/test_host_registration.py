@@ -40,7 +40,7 @@ def test_registers_platform_and_management_surface(tmp_path):
 
     register(context)
 
-    assert HERMES_PLUGIN_MANIFEST["version"] == "2.1.2"
+    assert HERMES_PLUGIN_MANIFEST["version"] == "2.2.0"
     assert context.platform_ids == ["open-android-intelligence-gateway"]
     assert len(context.admin_surfaces) == 1
 

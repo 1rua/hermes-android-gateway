@@ -845,6 +845,8 @@ class OpenAndroidPlatformAdapter(BasePlatformAdapter):
         elif session_store is not None and NATIVE_HERMES_AVAILABLE:
             from .host_history import HermesHistoryPort
             core.history_reader = HermesHistoryPort(core, session_store).read
+        port = getattr(getattr(core, "history_reader", None), "__self__", None)
+        core.conversation_manager = port.manage if session_store is not None and hasattr(port, "manage") else None
 
     def _native_generation_canceller(self) -> Any:
         if (not getattr(self, "_message_handler", None)
@@ -975,6 +977,8 @@ class OpenAndroidPlatformAdapter(BasePlatformAdapter):
             session_store = getattr(self, "_session_store", None)
             # 宿主历史只在原生会话储存已接入时提供，独立传输仍由 Core 短期队列负责。
             core.history_reader = HermesHistoryPort(core, session_store).read if session_store is not None and NATIVE_HERMES_AVAILABLE else None
+            port = getattr(core.history_reader, "__self__", None)
+            core.conversation_manager = port.manage if port is not None else None
         register_sink = getattr(core, "register_event_sink", None)
         if callable(register_sink):
             register_sink(self._event_sink)
@@ -1723,7 +1727,7 @@ class OpenAndroidPlatformAdapter(BasePlatformAdapter):
                 result = await asyncio.to_thread(handler_found._handle_raw, raw_req)
             finally:
                 self._password_tasks -= 1
-        elif re.fullmatch(r"/open-android-intelligence/v2/conversations/[^/]+/attachments/[^/]+/(metadata|cache-grant|content)", path):
+        elif re.fullmatch(r"/open-android-intelligence/v2/conversations/[^/]+/attachments/[^/]+/(metadata|cache-grant|content)", path) or (method in {"DELETE", "PATCH"} and re.fullmatch(r"/open-android-intelligence/v2/conversations/[^/]+", path)) or (method == "GET" and path == "/open-android-intelligence/v2/conversations"):
             # 原件散列、采用及 SQLite 读取离开事件循环，网络回复只保留一个有界块。
             result = await asyncio.to_thread(handler_found._handle_raw, raw_req)
         else:
@@ -1863,6 +1867,7 @@ class OpenAndroidPlatformAdapter(BasePlatformAdapter):
 
         account = self.services.core.open_gateway_account(account_id)
         try:
+            account.conversations.management.require_visible(conversation_id)
             binding = account.agent_sessions.lookup(conversation_id)
         finally:
             account.close()
