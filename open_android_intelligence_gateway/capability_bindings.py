@@ -11,11 +11,38 @@ class CapabilityBindings:
     def __init__(self, store: Any, contracts: Any):
         self.store, self.contracts = store, contracts
 
-    def register(self, device_id: str, generation: int, revision: int, bindings: list[dict[str, Any]]) -> None:
+    def register(self, device_id: str, generation: int, revision: int, bindings: list[dict[str, Any]], inventory: list[dict[str, Any]] | None = None) -> None:
         from .core import _jcs
         self.validate_publication(bindings)
+        if inventory is not None:
+            self.validate_inventory(inventory, bindings)
         self.store.database.execute("INSERT OR REPLACE INTO account_metadata(key,value) VALUES (?,?)",
-            (f"device-capabilities:{device_id}", _jcs({"generation": generation, "revision": revision, "bindings": bindings})))
+            (f"device-capabilities:{device_id}", _jcs({"generation": generation, "revision": revision, "bindings": bindings,
+                                                    **({"inventory": inventory} if inventory is not None else {})})))
+
+    def validate_inventory(self, inventory: Any, bindings: list[dict[str, Any]] | None = None) -> None:
+        from .core import GatewayError, _jcs
+        if not isinstance(inventory, list) or len(inventory) > 128 or len(_jcs(inventory).encode()) > 131072:
+            raise GatewayError("SCHEMA_INVALID")
+        seen = set()
+        for item in inventory:
+            if (not isinstance(item, dict) or set(item) != {"pluginId", "capabilityId", "capabilityVersion", "status", "reason"}
+                    or any(not isinstance(v, str) for v in item.values())
+                    or not re.fullmatch(r"[A-Za-z0-9.-]+", item["pluginId"])
+                    or not item["capabilityId"].startswith(item["pluginId"] + ".")
+                    or len(item["capabilityId"]) > 256
+                    or not re.fullmatch(r"\d+\.\d+\.\d+", item["capabilityVersion"])
+                    or item["status"] not in {"READY", "PLUGIN_DISABLED", "LOCAL_GRANT_REQUIRED", "ANDROID_PERMISSION_REQUIRED", "PROVIDER_UNAVAILABLE", "PROVIDER_NOT_SELECTED"}
+                    or not re.fullmatch(r"[A-Z0-9_]{0,128}", item["reason"])):
+                raise GatewayError("SCHEMA_INVALID")
+            key = (item["pluginId"], item["capabilityId"], item["capabilityVersion"])
+            if key in seen:
+                raise GatewayError("SCHEMA_INVALID")
+            seen.add(key)
+        if bindings is not None:
+            identity = lambda item: (item["pluginId"], item["capabilityId"], item["capabilityVersion"])
+            if {identity(item) for item in inventory if item["status"] == "READY"} != {identity(item) for item in bindings}:
+                raise GatewayError("SCHEMA_INVALID")
 
     def validate_publication(self, bindings: list[dict[str, Any]]) -> None:
         """Check the entire publication before making any authorization change."""
@@ -82,16 +109,23 @@ class CapabilityBindings:
         except Exception:
             raise GatewayError("SCHEMA_INVALID") from None
 
-    def list(self, device_id: str, generation: int, revision: int) -> list[dict[str, Any]]:
+    def publication(self, device_id: str) -> dict[str, Any] | None:
         row = self.store.database.execute("SELECT value FROM account_metadata WHERE key=?", (f"device-capabilities:{device_id}",)).fetchone()
-        if row is None: return []
-        saved = json.loads(row[0])
-        return saved["bindings"] if saved["generation"] == generation and saved["revision"] == revision else []
+        return json.loads(row[0]) if row else None
+
+    def list(self, device_id: str, generation: int, revision: int) -> list[dict[str, Any]]:
+        saved = self.publication(device_id)
+        return saved["bindings"] if saved and saved["generation"] == generation and saved["revision"] == revision else []
+
+    def available(self, device_id: str, generation: int, revision: int) -> list[dict[str, Any]]:
+        from .capability_policy import DeviceCapabilityPolicy
+        policy = DeviceCapabilityPolicy(self.store)
+        return [binding for binding in self.list(device_id, generation, revision) if policy.allows(binding["capabilityId"])]
 
     def validate(self, device_id: str, generation: int, revision: int, request: Mapping[str, Any]) -> bool:
         if not self.contracts.validate("device.request", request): return False
         provider, capability = request["provider"], request["capability"]
-        for binding in self.list(device_id, generation, revision):
+        for binding in self.available(device_id, generation, revision):
             if (binding["pluginId"] == provider["pluginId"] and binding["authorKeyId"] == provider["authorKeyId"]
                 and binding["capabilityId"] == capability["id"] and binding["capabilityVersion"] == capability["version"]):
                 return binding["risk"] == request["risk"] and Draft202012Validator(binding["schema"],format_checker=FormatChecker()).is_valid(request["parameters"])

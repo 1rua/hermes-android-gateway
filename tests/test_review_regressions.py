@@ -23,6 +23,8 @@ def register(account, schema, risk="read"):
         "schema": schema, "risk": risk,
     }
     account.device_requests.capabilities.register("dev_1", 1, 1, [binding])
+    from open_android_intelligence_gateway.capability_policy import DeviceCapabilityPolicy
+    DeviceCapabilityPolicy(account.store).set(binding["capabilityId"], True)
     return binding
 
 

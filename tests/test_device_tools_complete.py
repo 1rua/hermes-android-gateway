@@ -18,6 +18,8 @@ def test_native_tool_consumes_only_exact_adopted_result_and_rejects_untrusted_ro
     try:
         assert a.device_requests.capabilities.list('dev_1',1,1)==[]
         a.device_requests.capabilities.register('dev_1',1,1,[binding])
+        from open_android_intelligence_gateway.capability_policy import DeviceCapabilityPolicy
+        DeviceCapabilityPolicy(a.store).set(binding['capabilityId'], True)
         with pytest.raises(GatewayError):a.device_requests.capabilities.register('dev_1',1,1,[{**binding,'schemaSha256':'sha256:'+'0'*64}])
     finally:a.close()
     args={'capabilityId':binding['capabilityId'],'capabilityVersion':'1.0.0','parameters':{'limit':1}}

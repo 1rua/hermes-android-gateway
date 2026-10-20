@@ -2789,11 +2789,17 @@ class DeviceRequestStore:
             "requiresForegroundConfirmation": risk == "high-privilege-ephemeral" or bool(requires_foreground_confirmation),
         }
         if not self.capabilities.validate(device_id, int(pairing_generation), int(grant_revision), record):
+            from .capability_policy import DeviceCapabilityPolicy
+            if not DeviceCapabilityPolicy(self.store).allows(record["capability"]["id"]):
+                raise GatewayError("CAPABILITY_DENIED", {"reason": "GATEWAY_DISABLED"})
             raise GatewayError("SCHEMA_INVALID")
         parameters_json = "" if state == "expired" else self.store.seal_json(
             parameters, f"device-request:{self.account_id}:{request_id}:parameters"
         )
         with self.store.transaction():
+            from .capability_policy import DeviceCapabilityPolicy
+            if not DeviceCapabilityPolicy(self.store).allows(record["capability"]["id"]):
+                raise GatewayError("CAPABILITY_DENIED", {"reason": "GATEWAY_DISABLED"})
             self.store.database.execute(
                 """
                 INSERT INTO device_requests(request_id, device_id, pairing_generation, grant_revision, risk, state,
@@ -2822,6 +2828,7 @@ class DeviceRequestStore:
         with self.store.transaction():
             row = self._row(request_id)
             self._assert_binding(row, device_id, pairing_generation, grant_revision)
+            self._assert_capability_enabled(row)
             if self._expire_if_due(row, current):
                 expired = True
             else:
@@ -2866,6 +2873,7 @@ class DeviceRequestStore:
         with self.store.transaction():
             row = self._row(request_id)
             self._assert_binding(row, device_id, pairing_generation, grant_revision)
+            self._assert_capability_enabled(row)
             if self._expire_if_due(row, current):
                 expired = True
             else:
@@ -2903,6 +2911,7 @@ class DeviceRequestStore:
         with self.store.transaction():
             row = self._row(request_id)
             self._assert_binding(row, device_id, pairing_generation, grant_revision)
+            self._assert_capability_enabled(row)
             if self._expire_if_due(row, current):
                 return "OUTCOME_UNKNOWN"
             receipt = self.store.database.execute("SELECT * FROM claim_receipts WHERE request_id = ?", (request_id,)).fetchone()
@@ -2913,6 +2922,7 @@ class DeviceRequestStore:
 
     def read_result(self, request_id: str, claim_id: str, now: datetime | str | None = None) -> dict[str, Any] | None:
         row = self._row(request_id)
+        self._assert_capability_enabled(row)
         receipt = self.store.database.execute("SELECT 1 FROM claim_receipts WHERE request_id = ? AND claim_id = ?", (request_id, claim_id)).fetchone()
         if receipt is None:
             raise GatewayError("OUTCOME_UNKNOWN")
@@ -2942,6 +2952,7 @@ class DeviceRequestStore:
         with self.store.transaction():
             row = self._row(request_id)
             self._assert_binding(row, device_id, pairing_generation, grant_revision)
+            self._assert_capability_enabled(row)
             if self._expire_if_due(row, current):
                 return "OUTCOME_UNKNOWN"
             receipt = self.store.database.execute(
@@ -3051,6 +3062,14 @@ class DeviceRequestStore:
         if row is None:
             raise GatewayError("OUTCOME_UNKNOWN")
         return row
+
+    def _assert_capability_enabled(self, row: sqlite3.Row) -> None:
+        from .capability_policy import DeviceCapabilityPolicy
+        revoked = self.store.database.execute("SELECT 1 FROM account_metadata WHERE key=?", (f"device-request-policy-revoked:{row['request_id']}",)).fetchone()
+        if revoked:
+            raise GatewayError("CAPABILITY_DENIED", {"reason": "REQUEST_REVOKED", "cause": "GATEWAY_DISABLED"})
+        if not DeviceCapabilityPolicy(self.store).allows(json.loads(row["capability_json"])["id"]):
+            raise GatewayError("CAPABILITY_DENIED", {"reason": "GATEWAY_DISABLED"})
 
     @staticmethod
     def _assert_binding(row: sqlite3.Row, device_id: str, pairing_generation: int, grant_revision: int) -> None:
@@ -3764,6 +3783,10 @@ class GatewayAccount:
                 "UPDATE device_keys SET grant_revision = ? WHERE device_id = ?",
                 (next_revision, device_id),
             )
+            if grant_digest is None:
+                # An administrative revocation is not an acknowledgement of the
+                # previous Android publication, even when its payload is unchanged.
+                self.store.database.execute("DELETE FROM account_metadata WHERE key=?", (f"device-grant-digest:{device_id}",))
             self.events.append(
                 "pairing.grant.changed", correlation_id, {"deviceId": device_id, "grantRevision": next_revision, **({"grantDigest":grant_digest} if grant_digest else {})}, current,
             )
@@ -5475,26 +5498,42 @@ class GatewayCore:
                         return _success(context,{"baselineCursor":baseline["eventId"],"conversations":account.conversations.list(),"pendingDeviceRequests":[r[0] for r in pending],"pairingGeneration":context["pairingGeneration"],"grantRevision":context["grantRevision"]})
                     if method == "GET" and target_path == "/open-android-intelligence/v2/pairings/current":
                         saved = account.store.database.execute("SELECT value FROM account_metadata WHERE key=?", (f"device-grant-digest:{context['deviceId']}",)).fetchone()
-                        return _success(context,{"deviceId":context["deviceId"],"pairingGeneration":context["pairingGeneration"],"grantRevision":context["grantRevision"],**({"grantDigest":saved[0]} if saved else {})})
+                        publication = account.device_requests.capabilities.publication(context["deviceId"])
+                        if not publication or publication["generation"] != context["pairingGeneration"] or publication["revision"] != context["grantRevision"]:
+                            saved = None
+                        from .capability_policy import DeviceCapabilityPolicy, capability_catalog
+                        return _success(context,{"deviceId":context["deviceId"],"pairingGeneration":context["pairingGeneration"],"grantRevision":context["grantRevision"],
+                            "capabilityPublicationVersion":2,"capabilityPolicy":DeviceCapabilityPolicy(account.store).snapshot(),
+                            "capabilities":[{k:v for k,v in item.items() if k != "schema"} for item in capability_catalog(account,context["deviceId"])],
+                            **({"grantDigest":saved[0]} if saved else {})})
                     if method == "POST" and target_path == "/open-android-intelligence/v2/pairings/current/capabilities":
-                        if (not isinstance(body, Mapping) or set(body) != {"bindings","expectedGrantRevision","localGrantRevision"}
-                            or body["expectedGrantRevision"] != context["grantRevision"] or not isinstance(body["localGrantRevision"], int)):
+                        if (not isinstance(body, Mapping) or set(body) not in ({"bindings","expectedGrantRevision","localGrantRevision"}, {"bindings","inventory","expectedGrantRevision","localGrantRevision"})
+                            or type(body["expectedGrantRevision"]) is not int or type(body["localGrantRevision"]) is not int
+                            or body["localGrantRevision"] < 0):
+                            raise GatewayError("SCHEMA_INVALID")
+                        if body["expectedGrantRevision"] != context["grantRevision"]:
                             raise GatewayError("GRANT_STALE")
                         account.device_requests.capabilities.validate_publication(body["bindings"])
-                        digest = "sha256:" + hashlib.sha256(_jcs({"bindings":body["bindings"],"localGrantRevision":body["localGrantRevision"]}).encode()).hexdigest()
+                        if "inventory" in body:
+                            account.device_requests.capabilities.validate_inventory(body["inventory"],body["bindings"])
+                        digest = "sha256:" + hashlib.sha256(_jcs({k:body[k] for k in ("bindings","localGrantRevision","inventory") if k in body}).encode()).hexdigest()
                         key = f"device-grant-digest:{context['deviceId']}"
                         prior = account.store.database.execute("SELECT value FROM account_metadata WHERE key=?", (key,)).fetchone()
-                        revision = int(context["grantRevision"]) if prior and prior[0] == digest else account.bump_grant_revision(context["deviceId"],context["correlationId"],_request_now(request),grant_digest=digest)["grantRevision"]
-                        account.device_requests.capabilities.register(context["deviceId"],int(context["pairingGeneration"]),revision,body["bindings"])
+                        published = account.device_requests.capabilities.publication(context["deviceId"])
+                        current_publication = published and published["generation"] == context["pairingGeneration"] and published["revision"] == context["grantRevision"]
+                        revision = int(context["grantRevision"]) if prior and prior[0] == digest and current_publication else account.bump_grant_revision(context["deviceId"],context["correlationId"],_request_now(request),grant_digest=digest)["grantRevision"]
+                        account.device_requests.capabilities.register(context["deviceId"],int(context["pairingGeneration"]),revision,body["bindings"],body.get("inventory"))
                         account.store.database.execute("INSERT OR REPLACE INTO account_metadata(key,value) VALUES (?,?)", (key,digest))
                         return _success(context,{"grantRevision":revision,"grantDigest":digest})
                     device_get = re.fullmatch(r"/open-android-intelligence/v2/device-requests/([^/]+)",target_path)
                     if method == "GET" and device_get:
-                        record = account.device_requests.get(device_get.group(1))
-                        if record["deviceId"] != context["deviceId"] or record["pairingGeneration"] != int(context["pairingGeneration"]):
+                        row = account.device_requests._row(device_get.group(1))
+                        if row["device_id"] != context["deviceId"] or row["pairing_generation"] != int(context["pairingGeneration"]):
                             raise GatewayError("PAIRING_GENERATION_STALE")
-                        if record["grantRevision"] != int(context["grantRevision"]):
+                        if row["grant_revision"] != int(context["grantRevision"]):
                             raise GatewayError("GRANT_STALE")
+                        account.device_requests._assert_capability_enabled(row)
+                        record = account.device_requests._map(row)
                         return _success(context,{"request":record})
                     if method == "DELETE" and target_path == "/open-android-intelligence/v2/pairings/current":
                         return self._handle_unpair(account, context, _request_now(request))
