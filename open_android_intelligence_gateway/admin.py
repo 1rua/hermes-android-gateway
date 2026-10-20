@@ -287,6 +287,54 @@ class AdminService:
 
     grantBump = grant_bump
 
+    def capabilities(self, command: Mapping[str, Any]) -> dict[str, Any]:
+        from .capability_policy import DeviceCapabilityPolicy, capability_catalog
+        import json
+        operation = str(command.get("command"))
+        if operation == "capabilities.set" and self.read_only:
+            return _failure(operation, True, "HOST_INCOMPATIBLE")
+        account_id = command.get("accountId")
+        if not isinstance(account_id, str) or WIRE_ID_PATTERN.fullmatch(account_id) is None:
+            return _failure(operation, self.read_only, "SCHEMA_INVALID")
+        if not self.core.account_exists(account_id):
+            return _failure(operation, self.read_only, "ACCOUNT_NOT_FOUND")
+        if operation == "capabilities.set" and command.get("localConfirmation") is not True:
+            return _failure(operation, False, "LOCAL_CONFIRMATION_REQUIRED")
+        account = self.core.open_gateway_account(account_id)
+        try:
+            policy = DeviceCapabilityPolicy(account.store)
+            if operation == "capabilities.set":
+                capability_id, enabled = command.get("capabilityId"), command.get("enabled")
+                if not policy.valid_id(capability_id) or type(enabled) is not bool:
+                    return _failure(operation, False, "SCHEMA_INVALID")
+                with account.store.transaction():
+                    before = policy.snapshot()
+                    after = policy.set(capability_id, enabled)
+                    if before != after:
+                        if not enabled:
+                            rows = account.store.database.execute("SELECT * FROM device_requests").fetchall()
+                            for row in rows:
+                                if json.loads(row["capability_json"])["id"] != capability_id:
+                                    continue
+                                # Permanent fence: re-enabling cannot revive an old queued call or result.
+                                account.store.database.execute("INSERT OR REPLACE INTO account_metadata(key,value) VALUES (?,?)",
+                                    (f"device-request-policy-revoked:{row['request_id']}", "1"))
+                                account.store.database.execute("UPDATE device_requests SET parameters_json='',result_json='' WHERE request_id=?", (row["request_id"],))
+                                if row["state"] in {"pending", "claimed", "cancel_requested"}:
+                                    account.store.database.execute("UPDATE device_requests SET state=? WHERE request_id=?",
+                                        ("cancelled" if row["state"] == "pending" else "cancel_requested", row["request_id"]))
+                                    account.events.append("device.request.cancel.requested", "capabilities.set", {"requestId": row["request_id"]})
+                        account.events.append("gateway.notice", "capabilities.set", {"noticeCode": "DEVICE_CAPABILITY_POLICY_CHANGED"})
+                        account.audit.append("gateway.capability.changed", {"accountId": account_id},
+                            {"capabilityId": capability_id, "enabled": enabled, "policyRevision": after["revision"]}, "capabilities.set")
+            return _success(operation, self.read_only, {"accountId": account_id, "policy": policy.snapshot(), "capabilities": capability_catalog(account)})
+        except GatewayError as exc:
+            return _failure(operation, self.read_only, exc.code)
+        except (ValueError, TypeError):
+            return _failure(operation, self.read_only, "CAPABILITY_POLICY_INVALID")
+        finally:
+            account.close()
+
     def status(self) -> dict[str, Any]:
         return _success("admin.status", self.read_only, {
             "hostVersion": self.host_version,
@@ -309,6 +357,8 @@ class AdminService:
 
     def execute(self, command: Mapping[str, Any] | Any) -> dict[str, Any]:
         name = _input(command, "command", "command")
+        if name in {"capabilities.list", "capabilities.set"}:
+            return self.capabilities(command)
         if name == "pairing.invite": return self.create_pairing_invite(command)
         if name == "admin.status":
             return self.status()
@@ -430,6 +480,12 @@ def _parse_flags(tokens: list[str]) -> dict[str, Any] | None:
 
 
 def _parse_command(args: list[str], service: AdminService) -> Mapping[str, Any] | dict[str, Any]:
+    if len(args) == 3 and args[:2] == ["capabilities", "list"]:
+        return {"command": "capabilities.list", "accountId": args[2]}
+    if len(args) in {5, 6} and args[:2] == ["capabilities", "set"] and args[4] in {"on", "off"}:
+        if len(args) == 6 and args[5] != "--confirm-local":
+            return _invalid_arguments(service)
+        return {"command": "capabilities.set", "accountId": args[2], "capabilityId": args[3], "enabled": args[4] == "on", "localConfirmation": len(args) == 6}
     if len(args)==5 and args[:2]==["pairing","invite"] and args[4]=="--confirm-local": return {"command":"pairing.invite","accountId":args[2],"gatewayUrl":args[3],"localConfirmation":True}
     if args[:2] in (["account", "create"], ["account", "reset-password"]) and len(args) >= 3:
         flags = _parse_flags(list(args[3:]))
@@ -485,6 +541,15 @@ def create_admin_cli_registrar(service: AdminService) -> Callable[..., Any]:
     def registrar(program: Any, *_: Any, **__: Any) -> None:
         root = program.command("open-android-intelligence").description("Manage Open Android Intelligence Gateway accounts")
         account = root.command("account").description("Manage Open Android Intelligence Gateway accounts")
+        capabilities = root.command("capabilities").description("Account-local Agent capability switches and Android diagnostics")
+        capabilities.command("list <accountId>").description("Show switches and current device authorization states").action(
+            lambda account_id: service.execute({"command": "capabilities.list", "accountId": str(account_id)}))
+        capabilities.command("set <accountId> <capabilityId> <state>").description("Set on/off; Android authorization is still required").option(
+            "--confirm-local", "Confirm this write on the local host").action(
+            lambda account_id, capability_id, state, options=None: service.execute({
+                "command": "capabilities.set", "accountId": str(account_id), "capabilityId": str(capability_id),
+                "enabled": {"on": True, "off": False}.get(str(state)),
+                "localConfirmation": bool(isinstance(options, Mapping) and options.get("confirmLocal") is True)}))
         account.command("create <accountId>").description("Create a Gateway account").option(
             "--confirm-local", "Confirm this write on the local host"
         ).option(

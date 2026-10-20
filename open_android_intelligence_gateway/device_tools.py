@@ -13,9 +13,31 @@ trusted_turn: ContextVar[dict[str, Any] | None] = ContextVar("oai_trusted_device
 _pending: dict[tuple[int,str,str], tuple[str,str,str]] = {}
 _pending_lock = threading.RLock()
 
-TOOL_SCHEMA = {"name":TOOL_NAME,"description":"Invoke a capability explicitly granted on the paired Android device. The host selects the device and provider.",
+TOOL_SCHEMA = {"name":TOOL_NAME,"description":"Invoke a capability enabled for this Gateway account and explicitly granted on Android. First use open_android_capabilities to discover exact IDs, versions, schemas and diagnostics. The host selects the device and provider.",
     "parameters":{"type":"object","additionalProperties":False,"required":["capabilityId","capabilityVersion","parameters"],
         "properties":{"capabilityId":{"type":"string","maxLength":256},"capabilityVersion":{"type":"string","pattern":r"^\d+\.\d+\.\d+$"},"parameters":{"type":"object"}}}}
+
+DISCOVERY_SCHEMA = {"name": "open_android_capabilities", "description": "List this conversation's paired Android capabilities, exact parameter schemas, Gateway switches and Android authorization diagnostics.",
+    "parameters": {"type": "object", "properties": {}, "additionalProperties": False}}
+
+
+def discover(core: Any, args: Mapping[str, Any], **host_context: Any) -> dict[str, Any]:
+    from .core import GatewayError
+    from .capability_policy import DeviceCapabilityPolicy, capability_catalog
+    if not isinstance(args, Mapping) or args:
+        raise GatewayError("SCHEMA_INVALID")
+    origin = resolve_origin(core, str(host_context.get("session_id") or ""))
+    if origin is None:
+        raise GatewayError("PAIRING_REQUIRED")
+    account = core.open_gateway_account(origin["accountId"])
+    try:
+        device = account.store.database.execute("SELECT pairing_generation FROM device_keys WHERE device_id=?", (origin["deviceId"],)).fetchone()
+        if not device or device[0] != origin["pairingGeneration"]:
+            raise GatewayError("PAIRING_GENERATION_STALE")
+        return {"policyRevision": DeviceCapabilityPolicy(account.store).snapshot()["revision"],
+                "capabilities": capability_catalog(account, origin["deviceId"])}
+    finally:
+        account.close()
 
 def resolve_origin(core: Any,session_id: str,account_hint: str | None = None,conversation_hint: str | None = None) -> dict[str, Any] | None:
     turn = trusted_turn.get()
@@ -50,7 +72,8 @@ def resolve_origin(core: Any,session_id: str,account_hint: str | None = None,con
 
 async def execute(core: Any,args: Mapping[str, Any],**host_context: Any) -> dict[str, Any]:
     from .core import GatewayError, _jcs, _now
-    if not isinstance(args,Mapping) or set(args) != {"capabilityId","capabilityVersion","parameters"} or not isinstance(args["parameters"],dict):
+    if (not isinstance(args,Mapping) or set(args) != {"capabilityId","capabilityVersion","parameters"} or not isinstance(args["parameters"],dict)
+            or not isinstance(args["capabilityId"],str) or not isinstance(args["capabilityVersion"],str)):
         raise GatewayError("SCHEMA_INVALID")
     origin = resolve_origin(core,str(host_context.get("session_id") or ""))
     if origin is None: raise GatewayError("PAIRING_REQUIRED")
@@ -61,9 +84,14 @@ async def execute(core: Any,args: Mapping[str, Any],**host_context: Any) -> dict
         device = account.store.database.execute("SELECT pairing_generation,grant_revision FROM device_keys WHERE device_id=?",(device_id,)).fetchone()
         if not device or int(device[0]) != origin["pairingGeneration"] or int(device[1]) != origin["grantRevision"]:
             raise GatewayError("GRANT_STALE")
-        bindings = account.device_requests.capabilities.list(device_id,int(device[0]),int(device[1]))
+        bindings = account.device_requests.capabilities.available(device_id,int(device[0]),int(device[1]))
         binding = next((item for item in bindings if item["capabilityId"] == args["capabilityId"] and item["capabilityVersion"] == args["capabilityVersion"]),None)
-        if binding is None: raise GatewayError("CAPABILITY_DENIED")
+        if binding is None:
+            from .capability_policy import capability_catalog, DeviceCapabilityPolicy
+            diagnostics = [item for item in capability_catalog(account,device_id) if item["capabilityId"] == args["capabilityId"]]
+            reason = ("GATEWAY_DISABLED" if not DeviceCapabilityPolicy(account.store).allows(args["capabilityId"]) else
+                      next((item["status"] for item in diagnostics if item["capabilityVersion"] in {None,args["capabilityVersion"]}),"CAPABILITY_NOT_PUBLISHED"))
+            raise GatewayError("CAPABILITY_DENIED", {"reason":reason,"capabilities":diagnostics})
         queued = account.device_requests.enqueue(request_id,device_id,int(device[0]),int(device[1]),binding["risk"],
             {"id":binding["capabilityId"],"version":binding["capabilityVersion"]},{"pluginId":binding["pluginId"],"authorKeyId":binding["authorKeyId"]},
             args["parameters"],origin["messageId"],requires_foreground_confirmation=binding["risk"] in {"write","high-privilege-ephemeral"},
@@ -74,6 +102,10 @@ async def execute(core: Any,args: Mapping[str, Any],**host_context: Any) -> dict
         while True:
             account = core.open_gateway_account(account_id)
             try:
+                current = account.store.database.execute("SELECT pairing_generation,grant_revision FROM device_keys WHERE device_id=?",(device_id,)).fetchone()
+                if not current or tuple(current) != (origin["pairingGeneration"],origin["grantRevision"]):
+                    raise GatewayError("GRANT_STALE")
+                account.device_requests._assert_capability_enabled(account.device_requests._row(request_id))
                 record = account.device_requests.get(request_id)
                 receipt = account.store.database.execute("SELECT claim_id FROM claim_receipts WHERE request_id=?",(request_id,)).fetchone()
                 if receipt and record["state"] in {"succeeded","failed","denied","cancelled","outcome_unknown"}:
@@ -123,7 +155,13 @@ def register_device_tools(ctx: Any,core: Any) -> None:
     hook = getattr(ctx,"register_hook",None) or getattr(ctx,"on",None)
     if not callable(register) or not callable(hook): return
     async def handler(args: dict[str,Any],**kwargs: Any) -> str:
-        from .core import _jcs
-        return _jcs(await execute(core,args,**kwargs))
+        from .core import _jcs, GatewayError
+        try: return _jcs(await execute(core,args,**kwargs))
+        except GatewayError as exc: return _jcs({"outcome":"denied","code":exc.code,**exc.details})
+    async def discovery_handler(args: dict[str,Any],**kwargs: Any) -> str:
+        from .core import _jcs, GatewayError
+        try: return _jcs(discover(core,args,**kwargs))
+        except GatewayError as exc: return _jcs({"code":exc.code,**exc.details})
     register(name=TOOL_NAME,toolset="open_android",schema=TOOL_SCHEMA,handler=handler,is_async=True,description=TOOL_SCHEMA["description"],emoji="📱")
+    register(name=DISCOVERY_SCHEMA["name"],toolset="open_android",schema=DISCOVERY_SCHEMA,handler=discovery_handler,is_async=True,description=DISCOVERY_SCHEMA["description"],emoji="📱")
     hook("post_tool_call",lambda **event: acknowledge_adopted(core,**event))

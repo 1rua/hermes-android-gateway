@@ -28,6 +28,33 @@ hermes open-android-intelligence status
 
 日常宿主启动时**不执行网络请求**，仅当本地契约未就绪时由 `setup` 向导或账号创建命令自动按版本拉取；也可随时通过 `hermes open-android-intelligence contract sync` 手工同步或更新契约。
 
+## 设备能力与通知读取
+
+`hermes gateway setup` 可为新账号选择设备能力，也可选择已有账号修改开关。
+通知、短信、通话记录提供初始选项；设备插件发布的新能力会自动加入选项。
+开关按 Gateway 账号保存在该账号数据库，未配置的能力默认关闭，升级已有安装后也需显式选择。
+
+```bash
+hermes open-android-intelligence capabilities list phone1
+hermes open-android-intelligence capabilities set phone1 org.openandroidintelligence.notifications.query on --confirm-local
+hermes open-android-intelligence capabilities set phone1 org.openandroidintelligence.notifications.query off --confirm-local
+```
+
+独立部署可使用 `python tools/hermes-account.py capabilities ...`，子命令和持久化位置与宿主 CLI 相同。
+Gateway 开关只限制 Agent，不会替手机安装插件或授予任何 Android 权限。
+通知读取仍需在手机安装并启用通知 `.alp` 插件、授权当前 Gateway 配对、允许本机通知采集并配置应用范围，
+最后在 Android 系统设置中授予通知使用权。内容字段还受本机「元数据/内容」策略限制。
+
+Agent 先调用 `open_android_capabilities` 获取实际能力 ID、版本、参数 Schema 与诊断，再调用 `open_android_device`。
+`CAPABILITY_DENIED` 的 `reason` 区分 `GATEWAY_DISABLED`、`PLUGIN_NOT_INSTALLED`、`PLUGIN_DISABLED`、
+`LOCAL_GRANT_REQUIRED`、`ANDROID_PERMISSION_REQUIRED`、`PROVIDER_UNAVAILABLE` 和 `SYNC_REQUIRED`。
+未提供详细清单的旧 Android 返回 `ANDROID_STATE_UNKNOWN`，不能把空 bindings 推断成「未安装」。
+在线、generation/revision 数字均不等于已授权；例如 `generation=4, revision=2, bindings=[]` 只能证明当前没有可分发的设备能力。
+
+新版 Android 会在插件/配对授权变更时立即同步，并每 5 秒校对系统权限、监听连接及账号开关。
+响应丢失、重连和重启通过当前签名配对状态与摘要恢复；外部撤销仍要求重新进行手机本地授权。
+关闭 Gateway 能力会取消已有排队请求并封锁在途请求的结果；再次开启不会复活旧请求。
+
 ## 更新
 
 ```bash

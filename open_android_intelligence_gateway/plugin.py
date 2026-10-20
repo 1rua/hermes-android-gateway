@@ -334,6 +334,38 @@ def compose_gateway_services(ctx: Any) -> GatewayServices:
     return GatewayServices(core, admin, exposure)
 
 
+def _configure_device_capabilities(admin: AdminService, account_id: str, input_fn: Callable[[str], str]) -> bool:
+    from .capability_policy import CAPABILITY_HINTS
+    result = admin.execute({"command": "capabilities.list", "accountId": account_id})
+    if not result.get("ok"):
+        print(f"  ❌ 无法读取设备能力配置：{result.get('error', {}).get('code')}")
+        return False
+    data = result["data"]
+    known = sorted(set(CAPABILITY_HINTS) | set(data["policy"]["enabled"]) | {item["capabilityId"] for item in data["capabilities"]})
+    print("\n  设备能力开关（仅当前 Gateway 账号；默认关闭）：")
+    print("  开启后仍需在 Android 安装并启用对应插件、为当前配对授权并授予系统权限。")
+    choices = {}
+    for capability_id in known:
+        enabled = data["policy"]["enabled"].get(capability_id) is True
+        states = sorted({item["androidStatus"] for item in data["capabilities"] if item["capabilityId"] == capability_id})
+        print(f"  • {CAPABILITY_HINTS.get(capability_id, capability_id)} ({capability_id})：{', '.join(states) or 'PAIRING_REQUIRED'}")
+        while True:
+            answer = input_fn(f"    允许 Agent 调用？[{'Y/n' if enabled else 'y/N'}]: ").strip().lower()
+            if answer in {"", "y", "yes", "n", "no"}:
+                choices[capability_id] = enabled if not answer else answer in {"y", "yes"}
+                break
+            print("    请输入 y 或 n。")
+    for capability_id, enabled in choices.items():
+        result = admin.execute({"command": "capabilities.set", "accountId": account_id,
+            "capabilityId": capability_id, "enabled": enabled, "localConfirmation": True})
+        if not result.get("ok"):
+            print(f"  ❌ 能力配置未保存：{result.get('error', {}).get('code')}")
+            return False
+    print(f"  ✅ 能力开关已保存。查看：hermes open-android-intelligence capabilities list {account_id}")
+    print(f"  修改：hermes open-android-intelligence capabilities set {account_id} <capabilityId> on|off --confirm-local\n")
+    return True
+
+
 def interactive_setup(
     admin: AdminService,
     input_fn: Callable[[str], str] = input,
@@ -378,6 +410,15 @@ def interactive_setup(
         return True
 
     try:
+        existing = admin.core.list_gateway_account_ids()
+        if existing:
+            print("  已有账号：" + ", ".join(existing))
+            selected = input_fn("  配置已有账号的设备能力请输入账号名称；直接回车创建新账号: ").strip()
+            if selected:
+                if selected not in existing:
+                    print("  ❌ 账号不存在。")
+                    return False
+                return _configure_device_capabilities(admin, selected, input_fn)
         choice = input_fn("  是否现在为连接手机创建一个网关账号？[Y/n]: ").strip()
         if choice.lower() in ("n", "no"):
             print("  已跳过账号创建。后续可随时通过命令创建：")
@@ -422,6 +463,8 @@ def interactive_setup(
         })
 
         if result.get("ok"):
+            if not _configure_device_capabilities(admin, account_id, input_fn):
+                return False
             import os
             port = os.getenv("OPEN_ANDROID_GATEWAY_PORT", "8045")
             storage_root = getattr(admin.core, "storage_root", "默认目录")
@@ -543,6 +586,16 @@ def register(ctx: Any) -> None:
             acct_subs.add_parser("status", help="Show Gateway status")
             acct_subs.add_parser("list", help="List Gateway accounts")
 
+            p_capabilities = subs.add_parser("capabilities", help="Account capability switches and Android authorization diagnostics")
+            cap_subs = p_capabilities.add_subparsers(dest="capabilities_action", required=True)
+            cap_list = cap_subs.add_parser("list", help="Show switches and Android states")
+            cap_list.add_argument("account_id")
+            cap_set = cap_subs.add_parser("set", help="Set a capability on/off; Android authorization remains required")
+            cap_set.add_argument("account_id")
+            cap_set.add_argument("capability_id")
+            cap_set.add_argument("state", choices=("on", "off"))
+            cap_set.add_argument("--confirm-local", action="store_true", default=False)
+
             p_contract = subs.add_parser(
                 "contract", help="Inspect or repair the Gateway protocol contract assets",
             )
@@ -564,6 +617,15 @@ def register(ctx: Any) -> None:
             acct_act = getattr(args, "account_action", None)
             contract_action = getattr(args, "contract_action", None)
             confirmed = bool(getattr(args, "confirm_local", False))
+
+            if sub == "capabilities":
+                import json
+                command = {"command": "capabilities." + args.capabilities_action, "accountId": args.account_id}
+                if args.capabilities_action == "set":
+                    command.update(capabilityId=args.capability_id, enabled=args.state == "on", localConfirmation=confirmed)
+                result = services.admin.execute(command)
+                print(json.dumps(result, ensure_ascii=False, indent=2))
+                return
 
             if sub == "contract":
                 if contract_action not in ("status", "sync"):

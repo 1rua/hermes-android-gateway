@@ -14,10 +14,11 @@ homepage: https://github.com/1rua/hermes-gateway-plugin
 # floor here would gate installs on a runtime this plugin never sees.
 python_runtime: ">=3.11"
 requires_hermes: ">=0.20.0"
-# Registered by device_tools.register_device_tools: the typed device-request
-# tool, and the hook that acknowledges adopted messages after a tool call.
+# Registered by device_tools.register_device_tools: capability discovery, the
+# typed device-request tool, and the adopted-message acknowledgement hook.
 provides_tools:
   - open_android_device
+  - open_android_capabilities
 provides_hooks:
   - post_tool_call
 requires_env: []

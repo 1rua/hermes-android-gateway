@@ -172,5 +172,7 @@ def enqueue_fixture(account, *args, **kwargs):
     key = fixture["key"]
     binding = {name:key[name] for name in ("pluginId","authorKeyId","capabilityId","capabilityVersion","schemaSha256")}
     binding.update(schema=fixture["schema"],risk=value("risk","risk"))
+    from open_android_intelligence_gateway.capability_policy import DeviceCapabilityPolicy
+    DeviceCapabilityPolicy(account.store).set(binding["capabilityId"], True)
     account.device_requests.capabilities.register(value("device_id","deviceId"),value("pairing_generation","pairingGeneration"),value("grant_revision","grantRevision"),[binding])
     return account.device_requests.enqueue(*args, **kwargs)

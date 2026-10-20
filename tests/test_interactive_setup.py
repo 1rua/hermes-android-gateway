@@ -8,6 +8,7 @@ import pytest
 from open_android_intelligence_gateway.admin import create_admin_service, HostApiCompatibility
 from open_android_intelligence_gateway.core import create_gateway_core
 from open_android_intelligence_gateway.plugin import interactive_setup
+from test_support import make_secret_store
 
 
 def _compatible_host_api():
@@ -15,13 +16,14 @@ def _compatible_host_api():
 
 
 def test_interactive_setup_success(tmp_path):
-    core = create_gateway_core(storage_root=tmp_path)
+    core = create_gateway_core(storage_root=tmp_path, secret_store=make_secret_store())
     admin = create_admin_service(core=core, host_version="2.0.0", host_api=_compatible_host_api())
 
     inputs = iter([
         "y",            # Create account?
         "phone1",       # Username
         "y",            # Local confirmation?
+        "n", "n", "n", # Account capability switches
     ])
     passwords = iter([
         "supersecret1",  # Password
@@ -46,7 +48,7 @@ def test_interactive_setup_success(tmp_path):
 
 
 def test_interactive_setup_decline_creates_no_account(tmp_path):
-    core = create_gateway_core(storage_root=tmp_path)
+    core = create_gateway_core(storage_root=tmp_path, secret_store=make_secret_store())
     admin = create_admin_service(core=core, host_version="2.0.0", host_api=_compatible_host_api())
 
     inputs = iter(["n"])  # Decline account
@@ -63,7 +65,7 @@ def test_interactive_setup_decline_creates_no_account(tmp_path):
 
 
 def test_interactive_setup_non_tty_falls_back_safely(tmp_path):
-    core = create_gateway_core(storage_root=tmp_path)
+    core = create_gateway_core(storage_root=tmp_path, secret_store=make_secret_store())
     admin = create_admin_service(core=core, host_version="2.0.0", host_api=_compatible_host_api())
 
     # Should not call input_fn or getpass_fn at all
@@ -82,7 +84,7 @@ def test_interactive_setup_non_tty_falls_back_safely(tmp_path):
 
 
 def test_interactive_setup_read_only_blocks(tmp_path):
-    core = create_gateway_core(storage_root=tmp_path)
+    core = create_gateway_core(storage_root=tmp_path, secret_store=make_secret_store())
     admin = create_admin_service(core=core, host_version="not-compatible", host_api=_compatible_host_api())
     assert admin.read_only is True
 
@@ -95,7 +97,7 @@ def test_interactive_setup_read_only_blocks(tmp_path):
 
 
 def test_interactive_setup_retries_invalid_username_and_password_mismatch(tmp_path):
-    core = create_gateway_core(storage_root=tmp_path)
+    core = create_gateway_core(storage_root=tmp_path, secret_store=make_secret_store())
     admin = create_admin_service(core=core, host_version="2.0.0", host_api=_compatible_host_api())
 
     inputs = iter([
@@ -104,6 +106,7 @@ def test_interactive_setup_retries_invalid_username_and_password_mismatch(tmp_pa
         "bad name with spaces!", # Invalid format (retry)
         "good_phone_2",    # Valid username
         "y",               # Local confirmation?
+        "n", "n", "n",
     ])
     passwords = iter([
         "",                # Empty password (retry)
@@ -130,7 +133,7 @@ def test_interactive_setup_retries_invalid_username_and_password_mismatch(tmp_pa
 
 
 def test_interactive_setup_cancel_at_confirmation(tmp_path):
-    core = create_gateway_core(storage_root=tmp_path)
+    core = create_gateway_core(storage_root=tmp_path, secret_store=make_secret_store())
     admin = create_admin_service(core=core, host_version="2.0.0", host_api=_compatible_host_api())
 
     inputs = iter([
@@ -157,13 +160,14 @@ def test_interactive_setup_cancel_at_confirmation(tmp_path):
 def test_interactive_setup_shows_port_from_env(tmp_path, monkeypatch, capsys):
     import os
     monkeypatch.setenv("OPEN_ANDROID_GATEWAY_PORT", "9090")
-    core = create_gateway_core(storage_root=tmp_path)
+    core = create_gateway_core(storage_root=tmp_path, secret_store=make_secret_store())
     admin = create_admin_service(core=core, host_version="2.0.0", host_api=_compatible_host_api())
 
     inputs = iter([
         "y",
         "port_user",
         "y",
+        "n", "n", "n",
     ])
     passwords = iter([
         "secret12345",
@@ -223,10 +227,10 @@ def test_interactive_setup_auto_syncs_contract_when_missing(tmp_path, monkeypatc
     monkeypatch.delenv("OPEN_ANDROID_GATEWAY_CONTRACT_ROOT", raising=False)
     monkeypatch.setattr(plugin_module, "plugin_root", lambda: plugin_root)
 
-    core = create_gateway_core(storage_root=tmp_path / "data")
+    core = create_gateway_core(storage_root=tmp_path / "data", secret_store=make_secret_store())
     admin = create_admin_service(core=core, host_version="2.0.0", host_api=_compatible_host_api())
 
-    inputs = iter(["y", "auto_phone", "y"])
+    inputs = iter(["y", "auto_phone", "y", "n", "n", "n"])
     passwords = iter(["secret123", "secret123"])
 
     success = interactive_setup(
@@ -257,7 +261,7 @@ def test_interactive_setup_fails_gracefully_when_contract_sync_fails(tmp_path, m
     monkeypatch.delenv("OPEN_ANDROID_GATEWAY_CONTRACT_ROOT", raising=False)
     monkeypatch.setattr(plugin_module, "plugin_root", lambda: plugin_root)
 
-    core = create_gateway_core(storage_root=tmp_path / "data")
+    core = create_gateway_core(storage_root=tmp_path / "data", secret_store=make_secret_store())
     admin = create_admin_service(core=core, host_version="2.0.0", host_api=_compatible_host_api())
 
     success = interactive_setup(

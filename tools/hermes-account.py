@@ -44,6 +44,8 @@ def _usage() -> None:
     print(f"  {SCRIPT} status              # 查看网关管理状态")
     print(f"  {SCRIPT} init-key [路径]     # 生成 0600 受限主密钥文件（ADR 0023）")
     print(f"  {SCRIPT} contract            # 查看协议契约是否就绪")
+    print(f"  {SCRIPT} capabilities list <账号>")
+    print(f"  {SCRIPT} capabilities set <账号> <capabilityId> on|off --confirm-local")
     print("\n示例:")
     print(f"  {SCRIPT} create djbd")
     sys.exit(1)
@@ -109,6 +111,13 @@ def main() -> None:
         # it must not be re-derived by the admin service.
         print(f"📄 协议契约状态: {resolution.source} @ {resolution.pinned_ref or '(由宿主指定)'}")
         print(f"  • 契约目录: {resolution.root}")
+        return
+    if cmd == "capabilities":
+        import json
+        result = run_admin_command(sys.argv[1:], admin)
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        if not result.get("ok"):
+            sys.exit(1)
         return
     if cmd in ("create", "add"):
         if len(sys.argv) < 3:
