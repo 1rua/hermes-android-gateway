@@ -42,13 +42,19 @@ hermes open-android-intelligence capabilities set phone1 org.openandroidintellig
 
 独立部署可使用 `python tools/hermes-account.py capabilities ...`，子命令和持久化位置与宿主 CLI 相同。
 Gateway 开关只限制 Agent，不会替手机安装插件或授予任何 Android 权限。
-通知读取仍需在手机安装并启用通知 `.alp` 插件、授权当前 Gateway 配对、允许本机通知采集并配置应用范围，
+通知读取仍需在 Full App 的插件设置中选择「安装通知读取插件」并启用，或导入已签名的通知 `.alp`；
+随后授权当前 Gateway 配对、允许本机通知采集并配置应用范围，
 最后在 Android 系统设置中授予通知使用权。内容字段还受本机「元数据/内容」策略限制。
 
 Agent 先调用 `open_android_capabilities` 获取实际能力 ID、版本、参数 Schema 与诊断，再调用 `open_android_device`。
+用户要求「查看手机当前通知」时，应在发现结果为 `READY` 后，将返回的真实 ID、版本与符合 Schema 的参数交给设备工具。
+这两项工具通过 Gateway 访问当前会话对应的已认证手机；宿主的 `terminal`、`adb devices` 并非该设备接口。
+能力未就绪时，Agent 应按实际状态引导完成 Gateway 账号开关、手机插件安装/启用、当前配对授权、
+本机采集策略或系统通知使用权设置，再重新发现能力。注册给宿主的两项工具描述均包含此指引，无需另装 Agent 技能。
 `CAPABILITY_DENIED` 的 `reason` 区分 `GATEWAY_DISABLED`、`PLUGIN_NOT_INSTALLED`、`PLUGIN_DISABLED`、
 `LOCAL_GRANT_REQUIRED`、`ANDROID_PERMISSION_REQUIRED`、`PROVIDER_UNAVAILABLE` 和 `SYNC_REQUIRED`。
-未提供详细清单的旧 Android 返回 `ANDROID_STATE_UNKNOWN`，不能把空 bindings 推断成「未安装」。
+未提供完整清单的旧 Android，或插件加载失败而无法证明清单完整的 App，返回 `ANDROID_STATE_UNKNOWN`。
+应先检查 App 的插件加载与同步诊断，必要时更新，不能把空 bindings 推断成「未安装」。
 在线、generation/revision 数字均不等于已授权；例如 `generation=4, revision=2, bindings=[]` 只能证明当前没有可分发的设备能力。
 
 新版 Android 会在插件/配对授权变更时立即同步，并每 5 秒校对系统权限、监听连接及账号开关。
