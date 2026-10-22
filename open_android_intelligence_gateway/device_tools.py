@@ -13,11 +13,31 @@ trusted_turn: ContextVar[dict[str, Any] | None] = ContextVar("oai_trusted_device
 _pending: dict[tuple[int,str,str], tuple[str,str,str]] = {}
 _pending_lock = threading.RLock()
 
-TOOL_SCHEMA = {"name":TOOL_NAME,"description":"Invoke a capability enabled for this Gateway account and explicitly granted on Android. First use open_android_capabilities to discover exact IDs, versions, schemas and diagnostics. The host selects the device and provider.",
+# Keep routing and recovery instructions in the registered tool descriptions:
+# the native host exposes these to the Agent even without a separate skill.
+DEVICE_ROUTING_GUIDANCE = (
+    "For the phone's current notifications, first call open_android_capabilities. "
+    "Only when status is READY, call open_android_device using the returned capabilityId, capabilityVersion "
+    "and schema-conforming parameters for the paired phone. "
+    "Do not fall back to terminal or adb devices: these run on the Agent host, outside Gateway device routing. "
+    "Otherwise report the exact status/reason and guide the user: "
+    "GATEWAY_DISABLED: enable the account switch in hermes gateway setup; "
+    "PLUGIN_NOT_INSTALLED: use the Full App's 安装通知读取插件 entry in plugin settings for notifications, "
+    "or install the matching signed .alp for other capabilities; "
+    "PLUGIN_DISABLED: enable the plugin; "
+    "LOCAL_GRANT_REQUIRED: grant the current pairing/local collection/app scope as the reason specifies; "
+    "ANDROID_PERMISSION_REQUIRED: grant Android notification access or the indicated permission; "
+    "PROVIDER_NOT_SELECTED: select the provider; PROVIDER_UNAVAILABLE: check the collector/listener connection; "
+    "SYNC_REQUIRED: reconnect and synchronize the App; "
+    "ANDROID_STATE_UNKNOWN: check App plugin-loading/sync diagnostics and update if needed; never claim the plugin is absent. "
+    "Discover again after settings change."
+)
+
+TOOL_SCHEMA = {"name":TOOL_NAME,"description":"Invoke a capability enabled for this Gateway account and explicitly granted on Android. The host selects the device and provider. " + DEVICE_ROUTING_GUIDANCE,
     "parameters":{"type":"object","additionalProperties":False,"required":["capabilityId","capabilityVersion","parameters"],
         "properties":{"capabilityId":{"type":"string","maxLength":256},"capabilityVersion":{"type":"string","pattern":r"^\d+\.\d+\.\d+$"},"parameters":{"type":"object"}}}}
 
-DISCOVERY_SCHEMA = {"name": "open_android_capabilities", "description": "List this conversation's paired Android capabilities, exact parameter schemas, Gateway switches and Android authorization diagnostics.",
+DISCOVERY_SCHEMA = {"name": "open_android_capabilities", "description": "List this conversation's paired Android capabilities, exact parameter schemas, Gateway switches and Android authorization diagnostics. " + DEVICE_ROUTING_GUIDANCE,
     "parameters": {"type": "object", "properties": {}, "additionalProperties": False}}
 
 
