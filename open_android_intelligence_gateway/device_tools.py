@@ -4,11 +4,16 @@ import asyncio
 from contextvars import ContextVar
 import hashlib
 import json
+import logging
 import threading
 import uuid
 from typing import Any, Mapping
 
 TOOL_NAME = "open_android_device"
+DEVICE_TOOL_WAIT_SECONDS = 60.0
+# 工具结束后仍给设备 30 秒回传宽限；请求失效后禁止再次执行。
+DEVICE_REQUEST_TIMEOUT_SECONDS = 90.0
+logger = logging.getLogger(__name__)
 trusted_turn: ContextVar[dict[str, Any] | None] = ContextVar("oai_trusted_device_turn",default=None)
 _pending: dict[tuple[int,str,str], tuple[str,str,str]] = {}
 _pending_lock = threading.RLock()
@@ -70,6 +75,18 @@ def resolve_origin(core: Any,session_id: str,account_hint: str | None = None,con
         finally: account.close()
     return None
 
+def _stop_waiting(core: Any, origin: Mapping[str, Any], request_id: str) -> bool:
+    from .core import _now
+    account = core.open_gateway_account(origin["accountId"])
+    try:
+        with account.store.transaction():
+            account.device_requests._expire_if_due(account.device_requests._row(request_id), _now())
+            if account.device_requests.get(request_id)["state"] in {"pending", "claimed"}:
+                account.device_requests.cancel(request_id,origin["deviceId"],origin["pairingGeneration"],origin["grantRevision"],origin["messageId"])
+            return account.store.database.execute("SELECT 1 FROM claim_receipts WHERE request_id=?",(request_id,)).fetchone() is not None
+    finally:
+        account.close()
+
 async def execute(core: Any,args: Mapping[str, Any],**host_context: Any) -> dict[str, Any]:
     from .core import GatewayError, _jcs, _now
     if (not isinstance(args,Mapping) or set(args) != {"capabilityId","capabilityVersion","parameters"} or not isinstance(args["parameters"],dict)
@@ -78,6 +95,8 @@ async def execute(core: Any,args: Mapping[str, Any],**host_context: Any) -> dict
     origin = resolve_origin(core,str(host_context.get("session_id") or ""))
     if origin is None: raise GatewayError("PAIRING_REQUIRED")
     account_id,device_id = origin["accountId"],origin["deviceId"]
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + DEVICE_TOOL_WAIT_SECONDS
     account = core.open_gateway_account(account_id)
     request_id = f"devreq_{uuid.uuid4()}"
     try:
@@ -95,44 +114,69 @@ async def execute(core: Any,args: Mapping[str, Any],**host_context: Any) -> dict
         queued = account.device_requests.enqueue(request_id,device_id,int(device[0]),int(device[1]),binding["risk"],
             {"id":binding["capabilityId"],"version":binding["capabilityVersion"]},{"pluginId":binding["pluginId"],"authorKeyId":binding["authorKeyId"]},
             args["parameters"],origin["messageId"],requires_foreground_confirmation=binding["risk"] in {"write","high-privilege-ephemeral"},
-            online=core.is_device_online(account_id,device_id,int(device[0])))
+            online=core.is_device_online(account_id,device_id,int(device[0])),
+            timeout_seconds=DEVICE_REQUEST_TIMEOUT_SECONDS)
         expires = _now(queued["expiresAt"]).timestamp()
     finally: account.close()
+    stage = "claim_wait"
     try:
         while True:
             account = core.open_gateway_account(account_id)
             try:
-                current = account.store.database.execute("SELECT pairing_generation,grant_revision FROM device_keys WHERE device_id=?",(device_id,)).fetchone()
-                if not current or tuple(current) != (origin["pairingGeneration"],origin["grantRevision"]):
-                    raise GatewayError("GRANT_STALE")
-                account.device_requests._assert_capability_enabled(account.device_requests._row(request_id))
-                record = account.device_requests.get(request_id)
-                receipt = account.store.database.execute("SELECT claim_id FROM claim_receipts WHERE request_id=?",(request_id,)).fetchone()
-                if receipt and record["state"] in {"succeeded","failed","denied","cancelled","outcome_unknown"}:
-                    result = account.device_requests.read_result(request_id,receipt[0])
-                    response = {"requestId":request_id,**(result or {"outcome":"outcome_unknown"})}
-                    if result is not None:
-                        fingerprint = hashlib.sha256(_jcs(response).encode()).hexdigest()
-                        with _pending_lock: _pending[(id(core),str(origin.get("sessionId") or ""),request_id)] = (account_id,receipt[0],fingerprint)
-                    return response
-                if record["state"] in {"expired","cancelled","outcome_unknown"} or _now().timestamp() >= expires:
-                    account.device_requests.recover_expired()
-                    return {"requestId":request_id,"outcome":"outcome_unknown","code":"DEVICE_OFFLINE" if record["state"] == "expired" else "DEVICE_TIMEOUT"}
+                # 超时取消与结果读取共用事务，避免覆盖同时抵达的真实终态。
+                with account.store.transaction():
+                    current = account.store.database.execute("SELECT pairing_generation,grant_revision FROM device_keys WHERE device_id=?",(device_id,)).fetchone()
+                    if not current or tuple(current) != (origin["pairingGeneration"],origin["grantRevision"]):
+                        raise GatewayError("GRANT_STALE")
+                    account.device_requests._assert_capability_enabled(account.device_requests._row(request_id))
+                    account.device_requests._expire_if_due(account.device_requests._row(request_id), _now())
+                    record = account.device_requests.get(request_id)
+                    receipt = account.store.database.execute("SELECT claim_id FROM claim_receipts WHERE request_id=?",(request_id,)).fetchone()
+                    stage = "result_wait" if receipt else "claim_wait"
+                    if receipt and record["state"] in {"succeeded","failed","denied","cancelled","outcome_unknown"}:
+                        result = account.device_requests.read_result(request_id,receipt[0])
+                        response = {"requestId":request_id,**(result or {
+                            "outcome":"outcome_unknown", "code":"DEVICE_TIMEOUT", "stage":stage})}
+                        if result is not None:
+                            fingerprint = hashlib.sha256(_jcs(response).encode()).hexdigest()
+                            with _pending_lock: _pending[(id(core),str(origin.get("sessionId") or ""),request_id)] = (account_id,receipt[0],fingerprint)
+                        logger.info("[open_android] device_request requestId=%s stage=tool_result state=%s", request_id, record["state"])
+                        return response
+                    if record["state"] == "cancelled":
+                        return {"requestId":request_id,"outcome":"cancelled","code":"DEVICE_CANCELLED","stage":stage}
+                    if record["state"] == "expired" or loop.time() >= deadline:
+                        if record["state"] in {"pending", "claimed"}:
+                            record = account.device_requests.cancel(request_id,device_id,origin["pairingGeneration"],origin["grantRevision"],origin["messageId"])
+                        code = "DEVICE_TIMEOUT" if receipt or core.is_device_online(account_id,device_id,origin["pairingGeneration"]) else "DEVICE_OFFLINE"
+                        logger.warning("[open_android] device_request requestId=%s stage=%s state=%s code=%s", request_id, stage, record["state"], code)
+                        return {"requestId":request_id,"outcome":"outcome_unknown" if receipt else "failed","code":code,"stage":stage}
             finally: account.close()
-            await asyncio.sleep(0.2)
-    except asyncio.CancelledError:
-        # Host stop/cancellation must also fence the phone's queued invocation.
-        # A claimed request remains cancel_requested: cancellation is not proof
-        # that an already-started side effect did not happen.
-        account = core.open_gateway_account(account_id)
+            await asyncio.sleep(max(0, min(0.2, deadline - loop.time(), expires - _now().timestamp())))
+    except GatewayError as exc:
+        uncertain = stage == "result_wait"
         try:
-            if account.device_requests.get(request_id)["state"] in {"pending", "claimed"}:
-                account.device_requests.cancel(request_id,device_id,origin["pairingGeneration"],origin["grantRevision"],origin["messageId"])
-        except GatewayError:
-            # Expiry/revocation may have fenced the request while the host stopped.
-            pass
-        finally: account.close()
+            uncertain = _stop_waiting(core, origin, request_id)
+            stage = "result_wait" if uncertain else "claim_wait"
+        except Exception as cleanup_error:
+            uncertain = True
+            logger.warning("[open_android] device_request requestId=%s stage=cleanup errorType=%s", request_id, type(cleanup_error).__name__)
+        logger.warning("[open_android] device_request requestId=%s stage=%s code=%s", request_id, stage, exc.code)
+        raise GatewayError(exc.code, {**exc.details, "requestId":request_id, "stage":stage,
+            "outcome":"outcome_unknown" if uncertain else "denied"}) from exc
+    except asyncio.CancelledError:
+        # 宿主停止也要阻止未领取请求；已领取请求不能伪称尚未产生副作用。
+        try:
+            _stop_waiting(core, origin, request_id)
+        except Exception as exc:
+            logger.warning("[open_android] device_request requestId=%s stage=host_cancel errorType=%s", request_id, type(exc).__name__)
         raise
+    except Exception as exc:
+        try:
+            stage = "result_wait" if _stop_waiting(core, origin, request_id) else "claim_wait"
+        except Exception as cleanup_error:
+            logger.warning("[open_android] device_request requestId=%s stage=cleanup errorType=%s", request_id, type(cleanup_error).__name__)
+        logger.error("[open_android] device_request requestId=%s stage=%s errorType=%s", request_id, stage, type(exc).__name__)
+        raise GatewayError("INTERNAL_ERROR", {"requestId":request_id, "stage":stage, "outcome":"outcome_unknown"}) from exc
 
 def acknowledge_adopted(core: Any,**event: Any) -> None:
     from .core import _jcs
