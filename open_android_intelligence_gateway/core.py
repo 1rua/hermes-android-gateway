@@ -2757,7 +2757,8 @@ class DeviceRequestStore:
         risk: str | None = None, capability: Mapping[str, Any] | None = None,
         provider: Mapping[str, Any] | None = None, parameters: Mapping[str, Any] | None = None,
         correlation_id: str | None = None, now: datetime | str | None = None,
-        requires_foreground_confirmation: bool | None = None, online: bool = False, **aliases: Any,
+        requires_foreground_confirmation: bool | None = None, online: bool = False,
+        timeout_seconds: float | None = None, **aliases: Any,
     ) -> dict[str, Any]:
         request_id = request_id if request_id is not None else aliases.pop("requestId")
         device_id = device_id if device_id is not None else aliases.pop("deviceId")
@@ -2776,7 +2777,12 @@ class DeviceRequestStore:
         current = _now(now)
         ttl = maximum_device_request_queue_seconds(risk)
         state = "expired" if ttl == 0 and not online else "pending"
-        expires_at = iso_millis(current + timedelta(seconds=ttl or (30 if online else 0)))
+        lifetime = ttl or (30 if online else 0)
+        if timeout_seconds is not None:
+            if not isinstance(timeout_seconds, (int, float)) or not 0 < timeout_seconds < float("inf"):
+                raise GatewayError("SCHEMA_INVALID")
+            lifetime = min(lifetime, timeout_seconds)
+        expires_at = iso_millis(current + timedelta(seconds=lifetime))
         record = {
             "requestId": request_id,
             "capability": dict(capability),
@@ -2817,6 +2823,7 @@ class DeviceRequestStore:
                 {"requestId": request_id, "risk": risk, "grantRevision": grant_revision, "state": state},
                 correlation_id, current,
             )
+        logger.info("[open_android] device_request requestId=%s stage=enqueued state=%s", request_id, state)
         return self.get(request_id)
 
     def claim(
@@ -2853,14 +2860,15 @@ class DeviceRequestStore:
                     {"requestId": request_id, "claimId": claim_id, "grantRevision": grant_revision},
                     correlation_id, current,
                 )
-                return {
+                claim = {
                     "claimId": claim_id, "requestId": request_id, "accountId": self.account_id,
                     "deviceId": device_id, "pairingGeneration": pairing_generation,
                     "grantRevision": grant_revision,
                 }
         if expired:
             raise GatewayError("OUTCOME_UNKNOWN")
-        raise GatewayError("OUTCOME_UNKNOWN")
+        logger.info("[open_android] device_request requestId=%s stage=claimed", request_id)
+        return claim
 
     def submit_result(
         self, request_id: str, device_id: str, pairing_generation: int,
@@ -2901,6 +2909,7 @@ class DeviceRequestStore:
             raise GatewayError("OUTCOME_UNKNOWN")
         if record is None:
             raise GatewayError("OUTCOME_UNKNOWN")
+        logger.info("[open_android] device_request requestId=%s stage=result_accepted state=%s", request_id, record["state"])
         return record
 
     def validate_claim_replay(
@@ -2966,18 +2975,17 @@ class DeviceRequestStore:
     def recover_expired(self, now: datetime | str | None = None) -> int:
         current = _now(now)
         rows = self.store.database.execute(
-            "SELECT request_id, state FROM device_requests WHERE expires_at <= ? AND state IN ('pending', 'claimed', 'cancel_requested') ORDER BY expires_at LIMIT 1000",
+            "SELECT request_id FROM device_requests WHERE expires_at <= ? AND state IN ('pending', 'claimed', 'cancel_requested') ORDER BY expires_at LIMIT 1000",
             (iso_millis(current),),
         ).fetchall()
         recovered = 0
         for row in rows:
             with self.store.transaction():
-                event = "expire" if row["state"] == "pending" else "recover_outcome_unknown"
-                self.store.database.execute(
-                    "UPDATE device_requests SET state = ?, parameters_json = '' WHERE request_id = ?",
-                    (next_device_request_state(row["state"], event), row["request_id"]),
-                )
-                recovered += 1
+                # 查询候选后可能已有结果提交；必须在事务内按最新状态恢复。
+                changed = self._expire_if_due(self._row(row["request_id"]), current)
+                recovered += int(changed)
+            if changed:
+                logger.info("[open_android] device_request requestId=%s stage=expired", row["request_id"])
         return recovered
 
     def cancel(self, request_id: str, device_id: str, pairing_generation: int, grant_revision: int, correlation_id: str, now: datetime | str | None = None) -> dict[str, Any]:
@@ -2992,6 +3000,8 @@ class DeviceRequestStore:
             else:
                 next_state = next_device_request_state(row["state"], "cancel")
                 self.store.database.execute("UPDATE device_requests SET state = ?, parameters_json = CASE WHEN ? = 'cancelled' THEN '' ELSE parameters_json END WHERE request_id = ?", (next_state, next_state, request_id))
+                if next_state == "cancelled":
+                    self.events.release_device_request(request_id)
                 self.events.append("device.request.cancel.requested", correlation_id, {"requestId": request_id}, current)
                 record = self.get(request_id)
         if expired:
@@ -3086,6 +3096,7 @@ class DeviceRequestStore:
             "UPDATE device_requests SET state = ?, parameters_json = '' WHERE request_id = ?",
             (next_device_request_state(row["state"], event), row["request_id"]),
         )
+        self.events.release_device_request(row["request_id"])
         return True
 
     def _receipt(self, row: sqlite3.Row) -> dict[str, Any]:
