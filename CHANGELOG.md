@@ -1,3 +1,11 @@
+# 3.0.0
+
+- 将 Android 设备协议与安全状态机迁移至 OAI Core，历史 Python 设备模块转发到 Core 同一实现。
+- 插件默认仅运行 Hermes 原生会话桥，不再启动独立 Gateway 或注册设备工具。
+- 保留原账号目录、主密钥、旧平台别名和原生 SessionStore/SessionDB/压缩链，采用 SQLite 独占连接防止旧库双写。
+- Core 账号与 Hermes 账号必须显式一对一映射；桥接 Token 与设备授权分离。
+- 测试和 CI 分别验证轻量入口与固定 Core/SDK 的原生会话契约；部署及回滚步骤见 README。
+
 # Changelog
 
 ## 2.2.0
