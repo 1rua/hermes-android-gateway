@@ -118,3 +118,37 @@ def test_registration_resolves_verified_hermes_host_api(tmp_path):
     ctx = PluginContext(tmp_path)
     register(ctx)
     assert ctx.admin_surfaces[0].read_only is False
+
+
+def test_registered_tools_teach_notification_routing_and_precise_setup_recovery(tmp_path):
+    class ToolHostContext(FakeHermesContext):
+        def __init__(self):
+            super().__init__(tmp_path, host_version="0.20.0")
+            self.tools = {}
+
+        def register_tool(self, **kwargs):
+            self.tools[kwargs["name"]] = kwargs
+
+        def register_hook(self, *_):
+            pass
+
+    context = ToolHostContext()
+    register(context)
+
+    assert set(context.tools) == {"open_android_capabilities", "open_android_device"}
+    for tool in context.tools.values():
+        description = tool["description"]
+        assert description == tool["schema"]["description"]
+        assert "phone's current notifications" in description
+        assert description.index("first call open_android_capabilities") < description.index("Only when status is READY, call open_android_device")
+        assert "returned capabilityId, capabilityVersion" in description
+        assert "schema-conforming parameters" in description
+        assert "Do not fall back to terminal or adb devices" in description
+        assert "GATEWAY_DISABLED: enable the account switch in hermes gateway setup" in description
+        assert "PLUGIN_NOT_INSTALLED: use the Full App's 安装通知读取插件 entry" in description
+        assert "matching signed .alp for other capabilities" in description
+        assert "PLUGIN_DISABLED: enable the plugin" in description
+        assert "LOCAL_GRANT_REQUIRED: grant the current pairing/local collection/app scope" in description
+        assert "ANDROID_PERMISSION_REQUIRED: grant Android notification access" in description
+        assert "SYNC_REQUIRED: reconnect and synchronize the App" in description
+        assert "ANDROID_STATE_UNKNOWN: check App plugin-loading/sync diagnostics and update if needed; never claim the plugin is absent" in description
