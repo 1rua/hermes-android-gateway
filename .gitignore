@@ -16,3 +16,27 @@ __pycache__/
 .pytest_cache/
 .venv/
 .hermes-native-sdk/
+
+# Paired Core checkout is CI-local, never a second implementation.
+.core-source/
+.env
+.env.*
+!.env.example
+*.log
+/tmp/
+node_modules/
+**/build/
+.gradle/
+.idea/
+.vscode/
+*.apk
+*.aab
+*.tmp
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+coverage/
+test-results/
+.codex/
+.claude/
