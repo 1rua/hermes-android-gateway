@@ -41,6 +41,8 @@ jobs:
       - name: Verify paired native sessions and account isolation
         run: >-
           python -m pytest .core-source/oai-core/tests/test_hermes.py
-          .core-source/oai-core/tests/test_hermes_native.py -q
+          .core-source/oai-core/tests/test_hermes_native.py
+          .core-source/oai-core/tests/test_hermes_interactions.py
+          .core-source/oai-core/tests/test_interaction_pipeline.py -q
         env:
           HERMES_SDK_ROOT: .hermes-native-sdk
